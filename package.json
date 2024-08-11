@@ -1,0 +1,22 @@
+{
+  "name": "ssm-commander",
+  "description": "A CLI tool to simplify the management and execution of AWS SSM commands. Easily create, store, list, and run your SSM commands.",
+  "version": "0.1.0",
+  "module": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "format": "bun prettier . --write"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "prettier": "^3.3.3"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@inquirer/prompts": "^5.3.8",
+    "commander": "^12.1.0"
+  }
+}

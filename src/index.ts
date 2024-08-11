@@ -1,5 +1,5 @@
 import { Command as CommanderCommand } from 'commander';
-import { Command, Instance, Profile } from './interface.ts';
+import { Command, type CreateUserInput, type Instance } from './interface.ts';
 import * as packageJson from '../package.json';
 import {
   getInstances,
@@ -11,6 +11,7 @@ import {
 } from './aws.ts';
 import { search, select } from '@inquirer/prompts';
 import { createTable, prompt as Ec2Search } from './table-search.ts';
+import DescriptionInput from './description-input.ts';
 
 if (!isAwsInstalled()) {
   console.error('AWS CLI is not installed. Please install AWS CLI and try again.');
@@ -25,6 +26,15 @@ if (!isSessionManagerPluginInstalled()) {
 const program = new CommanderCommand();
 program.name(packageJson.name).description(packageJson.description).version(packageJson.version);
 
+const validatePort = (text: string): boolean | string => {
+  const number = parseInt(text, 10);
+  if (/^\d+$/.test(text) && Number.isInteger(number) && number >= 1 && number <= 65535) {
+    return true;
+  } else {
+    return 'Invalid port number. Please enter a value between 1 and 65535.';
+  }
+};
+
 program
   .command('create')
   .description('Creates and stores a new SSM command with interactive CLI interface.')
@@ -37,7 +47,7 @@ program
     'Specify AWS region to use. If provided, interactive prompt for the region will be skipped. (It will overrides region set in the profile.)',
   )
   .action(async (options) => {
-    const data: { profile: Profile; command: Command, instance: Instance } = {};
+    const data = {} as CreateUserInput;
 
     const profiles = await getProfileNames();
     const regions = await getRegions();
@@ -97,23 +107,52 @@ program
           name: 'File Transfer',
           value: Command.FileTransfer,
           description:
-            'Transfer files between your local machine and an EC2 instance. Unlike other commands, it will prompt you interactively to enter the file paths.',
+            'Transfer files between your local machine and an EC2 instance using "scp". Unlike other commands, it will prompt you interactively to enter the file paths.',
         },
       ],
     })) as Command;
 
     const instances = await getInstances();
     const table = createTable(instances);
-    data.instance = await Ec2Search({
+    data.instance = (await Ec2Search({
       message: 'Select an EC2 instance',
       header: table.header,
       bottom: table.bottom,
       source: async (input) => {
         return table.choices.filter((choice) => choice.name.includes(input ?? ''));
       },
-    }) as Instance;
+    })) as Instance;
 
-    if ()
+    if (data.command === Command.PortForward) {
+      data.remoteHost = await DescriptionInput({
+        message: "Enter Remote Service's Host",
+        description:
+          'the Host of the remote service to be tunneled. If the service is running on this EC2 instance, "localhost" is also allowed.',
+        default: 'localhost',
+        required: true,
+      });
+      data.remotePort = await DescriptionInput({
+        message: "Enter Remote Service's Port number",
+        description: 'the Port number of the remote service to be tunneled.',
+        required: true,
+        validate: validatePort,
+      });
+      data.localPort = await DescriptionInput({
+        message: "Enter Local Machine's Port number",
+        description: 'the Port number on the local machine to be tunneled.',
+        required: true,
+        validate: validatePort,
+      });
+    } else if (data.command === Command.FileTransfer) {
+      data.sshPort = await DescriptionInput({
+        message: "Enter Port Number Used by the EC2 Instance's SSH(SCP) Service",
+        description: 'File Transfer command uses the SSH(SCP) service of the EC2 instance.',
+        default: '22',
+        required: true,
+        validate: validatePort,
+      });
+    }
+
     console.log(data);
   });
 

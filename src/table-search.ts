@@ -296,7 +296,7 @@ function calculateMaxLength(instances: Instance[]) {
   return maxLength;
 }
 
-function drawTableLine(chars, maxLength): string {
+function drawTableLine(chars: Record<string, string>, maxLength: Record<string, number>): string {
   let result = chars.left;
   result += [
     chars.default.repeat(maxLength.Name + CELL_PADDING * 2),
@@ -338,7 +338,7 @@ export function createTable(instances: Instance[]) {
   // ├─────┼─────┼─────┼─────┤
   header += MARGIN_LEFT + drawTableLine(TABLE_STYLE.headerBottom, maxLength);
 
-  const choices: {name: string, value: any }[] = [];
+  const choices: { name: string; value: any }[] = [];
   for (const instance of instances) {
     const name = [
       TABLE_STYLE.vertical,

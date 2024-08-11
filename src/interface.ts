@@ -30,6 +30,16 @@ export interface Instance {
   Name: string | null;
 }
 
+export interface CreateUserInput {
+  profile: Profile;
+  command: Command;
+  instance: Instance;
+  remoteHost?: string;
+  remotePort?: string;
+  localPort?: string;
+  sshPort?: string;
+}
+
 export enum Command {
   Connect = 'connect',
   PortForward = 'portForward',

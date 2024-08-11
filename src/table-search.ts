@@ -353,6 +353,7 @@ export function createTable(instances: Instance[]) {
     choices.push({ name, value });
   }
 
+  // └─────┴─────┴─────┴─────┘
   const bottom = '\n' + MARGIN_LEFT + drawTableLine(TABLE_STYLE.tableBottom, maxLength);
   return { header, bottom, choices };
 }

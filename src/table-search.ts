@@ -176,7 +176,7 @@ export const prompt = createPrompt(<Value>(config: SearchConfig<Value>, done: (v
 
       const color = isActive ? theme.style.highlight : (x: string) => x;
       const cursor = isActive ? theme.icon.cursor : ` `;
-      return color(`${cursor} ${line}`);
+      return replaceMatchedTextColor(`${cursor} ${line}`, searchTerm, color, colors.yellow);
     },
     pageSize,
     loop: false,
@@ -196,7 +196,7 @@ export const prompt = createPrompt(<Value>(config: SearchConfig<Value>, done: (v
       selectedChoice.name ??
       // TODO: Could we enforce that at the type level? Name should be defined for non-string values.
       String(selectedChoice.value);
-    return `${prefix} ${message} ${theme.style.answer(answer)}`;
+    return `${prefix} ${message} ${theme.style.answer(replaceAnswer(answer))}`;
   } else {
     searchStr = theme.style.searchTerm(searchTerm);
   }
@@ -210,6 +210,19 @@ export const prompt = createPrompt(<Value>(config: SearchConfig<Value>, done: (v
     `${config.header}${error ?? page}${config.bottom}${helpTip}${choiceDescription}`,
   ];
 });
+
+function replaceMatchedTextColor(text: string, searchTerm: string, defaultColor: (x: string) => string, matchedColor: (x: string) => string): string {
+  if (searchTerm.length === 0) {
+    return defaultColor(text);
+  } else {
+    return text.split(searchTerm).map((t) => defaultColor(t)).join(matchedColor(searchTerm));
+  }
+}
+
+function replaceAnswer(answer: string): string {
+  const split = answer.split(TABLE_STYLE.vertical).slice(1, -1).map((t) => t.trim());
+  return `${split[0]} (${split.slice(1).join(', ')})`;
+}
 
 const TABLE_STYLE = {
   headerTop: {

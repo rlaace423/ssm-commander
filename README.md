@@ -5,13 +5,16 @@
 To install dependencies:
 
 ```bash
-bun install```
+bun install
+```
   
 To run:
   
 ```bash
-bun run index.ts```
-  
+bun run index.ts
+```
+
+### todo
 - OS 타입
 - 바이너리 존재 확인
 - credential 파싱

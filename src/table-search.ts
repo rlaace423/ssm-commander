@@ -221,7 +221,8 @@ function replaceMatchedTextColor(text: string, searchTerm: string, defaultColor:
 
 function replaceAnswer(answer: string): string {
   const split = answer.split(TABLE_STYLE.vertical).slice(1, -1).map((t) => t.trim());
-  return `${split[0]} (${split.slice(1).join(', ')})`;
+  // trailing space MATTERs, might be because of how colors.cyan work.
+  return `${split[0]} (${split.slice(1).join(', ')}) `;
 }
 
 const TABLE_STYLE = {

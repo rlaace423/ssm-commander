@@ -112,7 +112,7 @@ program
       ],
     })) as Command;
 
-    const instances = await getInstances();
+    const instances = await getInstances(data.profile.Name);
     const table = createTable(instances);
     data.instance = (await Ec2Search({
       message: 'Select an EC2 instance',

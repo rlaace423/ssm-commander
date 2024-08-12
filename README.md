@@ -31,3 +31,4 @@ bun run index.ts
 - list
 - run
 - profile의 전체 내용을 저장할 필요가 없음. getProfile의 성공 여부만 판단해도 될듯
+- getInstances의 에러처리에 대해 고민 필요

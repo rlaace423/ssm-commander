@@ -47,10 +47,10 @@ function sortAsc(list: any[], field?: string) {
   return list;
 }
 
-export async function getInstances(): Promise<Instance[]> {
+export async function getInstances(profileName: string): Promise<Instance[]> {
   try {
     const instances: Instance[] =
-      await $`aws ec2 describe-instances --query "Reservations[].Instances[].{InstanceId: InstanceId, InstanceType: InstanceType, PrivateIpAddress: PrivateIpAddress, PublicIpAddress: PublicIpAddress, State: State.Name, Name: Tags[?Key=='Name'].Value | [0]}" --output json --no-cli-pager`.json();
+      await $`aws ec2 describe-instances --query "Reservations[].Instances[].{InstanceId: InstanceId, InstanceType: InstanceType, PrivateIpAddress: PrivateIpAddress, PublicIpAddress: PublicIpAddress, State: State.Name, Name: Tags[?Key=='Name'].Value | [0]}" --output json --no-cli-pager --profile ${profileName}`.json();
     return sortAsc(instances, 'Name');
   } catch (e) {
     throw new Error((e as ShellError).stderr.toString().trim());

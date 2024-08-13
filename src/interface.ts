@@ -33,7 +33,7 @@ export interface Instance {
 export interface CreateUserInput {
   name: string;
   profile: Profile;
-  command: Command;
+  command: CommandType;
   instance: Instance;
   remoteHost?: string;
   remotePort?: string;
@@ -41,8 +41,8 @@ export interface CreateUserInput {
   sshPort?: string;
 }
 
-export enum Command {
+export enum CommandType {
   Connect = 'connect',
-  PortForward = 'portForward',
-  FileTransfer = 'fileTransfer',
+  PortForward = 'port-forward',
+  FileTransfer = 'file-transfer',
 }

@@ -26,7 +26,9 @@ export async function getProfile(name: string): Promise<Profile> {
     const profile = await $`aws configure export-credentials --format process --profile ${name}`.json();
     return { ...profile, Name: name, Region: await getProfileRegion(name) };
   } catch (e) {
-    throw new Error((e as ShellError).stderr.toString().trim());
+    // throw new Error((e as ShellError).stderr.toString().trim());
+    console.error(`Invalid AWS CLI profile ${name}`);
+    process.exit(1);
   }
 }
 

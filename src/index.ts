@@ -35,6 +35,10 @@ const validatePort = (text: string): boolean | string => {
   }
 };
 
+const validateName = (text: string): boolean => {
+  return text?.trim?.().length > 0;
+};
+
 program
   .command('create')
   .description('Creates and stores a new SSM command with interactive CLI interface.')
@@ -152,6 +156,15 @@ program
         validate: validatePort,
       });
     }
+
+    data.name = await DescriptionInput({
+      message: '\nPlease enter a "Name" for this command',
+      description:
+        'Name will be used to identify and run commands later.',
+      default: `${data.profile.Name}-${data.command}-${data.instance.Name}`,
+      required: true,
+      validate: validateName,
+    });
 
     console.log(data);
   });

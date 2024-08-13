@@ -31,6 +31,7 @@ export interface Instance {
 }
 
 export interface CreateUserInput {
+  name: string;
   profile: Profile;
   command: Command;
   instance: Instance;

@@ -1,5 +1,7 @@
 import { Command as CommanderCommand } from 'commander';
-import { Command, type CreateUserInput, type Instance } from './interface.ts';
+import { search, select, confirm } from '@inquirer/prompts';
+import * as colors from 'yoctocolors-cjs';
+import { CommandType, type CreateUserInput, type Instance } from './interface.ts';
 import * as packageJson from '../package.json';
 import {
   getInstances,
@@ -9,7 +11,6 @@ import {
   isAwsInstalled,
   isSessionManagerPluginInstalled,
 } from './aws.ts';
-import { search, select } from '@inquirer/prompts';
 import { createTable, prompt as Ec2Search } from './table-search.ts';
 import DescriptionInput from './description-input.ts';
 
@@ -41,7 +42,7 @@ const validateName = (text: string): boolean => {
 
 program
   .command('create')
-  .description('Creates and stores a new SSM command with interactive CLI interface.')
+  .description('Creates and saves a new SSM command with interactive CLI interface.')
   .option(
     '--profile <profile>',
     'Specify AWS CLI profile to use. If provided, interactive prompt for the profile will be skipped.',
@@ -93,28 +94,28 @@ program
       data.profile.Region = region as string;
     }
 
-    data.command = (await select<Command>({
-      message: 'Select which command you would like to create',
+    data.command = (await select<CommandType>({
+      message: 'Select the type of "Command" you would like to create',
       choices: [
         {
           name: 'Connect',
-          value: Command.Connect,
+          value: CommandType.Connect,
           description: "Connect to an EC2 instance's shell environment.",
         },
         {
           name: 'Port Forward',
-          value: Command.PortForward,
+          value: CommandType.PortForward,
           description:
             'Establish a port forwarding connection to an EC2 instance. This command allows you to forward a port from a service running on the EC2 instance to your local machine, or use the instance as a BastionHost to forward a port from another server to your local machine.',
         },
         {
           name: 'File Transfer',
-          value: Command.FileTransfer,
+          value: CommandType.FileTransfer,
           description:
             'Transfer files between your local machine and an EC2 instance using "scp". Unlike other commands, it will prompt you interactively to enter the file paths.',
         },
       ],
-    })) as Command;
+    })) as CommandType;
 
     const instances = await getInstances(data.profile.Name);
     const table = createTable(instances);
@@ -127,7 +128,7 @@ program
       },
     })) as Instance;
 
-    if (data.command === Command.PortForward) {
+    if (data.command === CommandType.PortForward) {
       data.remoteHost = await DescriptionInput({
         message: "Enter Remote Service's Host",
         description:
@@ -147,7 +148,7 @@ program
         required: true,
         validate: validatePort,
       });
-    } else if (data.command === Command.FileTransfer) {
+    } else if (data.command === CommandType.FileTransfer) {
       data.sshPort = await DescriptionInput({
         message: "Enter Port Number Used by the EC2 Instance's SSH(SCP) Service",
         description: 'File Transfer command uses the SSH(SCP) service of the EC2 instance.',
@@ -158,7 +159,7 @@ program
     }
 
     data.name = await DescriptionInput({
-      message: '\nPlease enter a "Name" for this command',
+      message: 'Please enter a "Name" for this command',
       description:
         'Name will be used to identify and run commands later.',
       default: `${data.profile.Name}-${data.command}-${data.instance.Name}`,
@@ -166,11 +167,31 @@ program
       validate: validateName,
     });
 
-    console.log(data);
+    console.log('\n== Review your new "SSM Command" ==');
+    console.log(`✍️ Command Name:    ${colors.cyan(data.name)}`);
+    console.log(`🤵 AWS CLI Profile: ${colors.cyan(data.profile.Name)}`);
+    console.log(`🌏 AWS Region:      ${colors.cyan(data.profile.Region)}`);
+    console.log(`🖥️ EC2 Instance:    ` + colors.cyan(`${data.instance.Name} (${data.instance.InstanceId})`));
+    console.log(`🚀 Command Type:    ${colors.cyan(data.command)}`);
+
+    if (data.command === CommandType.PortForward) {
+      console.log(`    👉 Remote Service: ` + colors.cyan(`${data.remoteHost} (port ${data.remotePort})`));
+      console.log(`    👉 Local Port:     ${colors.cyan(data.localPort as string)}`);
+    } else if (data.command === CommandType.FileTransfer) {
+      console.log(`    👉 EC2 SSH Port: ${colors.cyan(data.sshPort as string)}`);
+    }
+
+    if (await confirm({ message: '\nSave this command?', default: true })) {
+      // TODO : save
+      // TODO if save succeeded,
+      if (await confirm({ message: 'Execute this command now?', default: true })) {
+
+      }
+    }
   });
 
-program.command('list').description('Displays a list of all stored SSM commands.');
+program.command('list').description('Displays a list of all saved SSM commands.');
 
-program.command('run').description('Executes a stored SSM command.');
+program.command('run').description('Executes a saved SSM command.');
 
 await program.parseAsync();

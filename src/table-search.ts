@@ -12,7 +12,7 @@ import {
   makeTheme,
   type Theme,
 } from '@inquirer/core';
-import colors from 'yoctocolors-cjs';
+import * as colors from 'yoctocolors-cjs';
 import figures from '@inquirer/figures';
 import type { PartialDeep } from '@inquirer/type';
 import type { Instance } from './interface.ts';

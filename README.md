@@ -1,6 +1,6 @@
 # SSM Commander
 
-## CLI tool to simplify the management and execution of AWS SSM commands. Easily create, store, list, and run your SSM commands with an interactive prompt.
+## CLI tool to simplify the management and execution of AWS SSM commands. Easily create, list, and run your SSM commands with an interactive prompt.
 
 To install dependencies:
 
@@ -27,7 +27,7 @@ bun run index.ts
     - region
     -
 - options
-- store command
+- save command
 - list
 - run
 - profile의 전체 내용을 저장할 필요가 없음. getProfile의 성공 여부만 판단해도 될듯

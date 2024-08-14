@@ -1,7 +1,7 @@
 import { Command as CommanderCommand } from 'commander';
 import { search, select, confirm } from '@inquirer/prompts';
 import * as colors from 'yoctocolors-cjs';
-import { CommandType, type CreateUserInput, type Instance } from './interface.ts';
+import { CommandType, ConfigFileCommand, type CreateUserInput, type Instance } from './interface.ts';
 import * as packageJson from '../package.json';
 import {
   getInstances,
@@ -178,24 +178,29 @@ program
     console.log(`🌏 AWS Region:      ${colors.cyan(data.profile.Region)}`);
     console.log(`🖥️ EC2 Instance:    ` + colors.cyan(`${data.instance.Name} (${data.instance.InstanceId})`));
     console.log(`🚀 Command Type:    ${colors.cyan(data.command)}`);
+    const configFileCommand: ConfigFileCommand = {
+      name: data.name,
+      profileName: data.profile.Name,
+      region: data.profile.Region,
+      instanceName: data.instance.Name as string,
+      instanceId: data.instance.InstanceId,
+      command: data.command,
+    };
 
     if (data.command === CommandType.PortForward) {
       console.log(`    👉 Remote Service: ` + colors.cyan(`${data.remoteHost} (port ${data.remotePort})`));
       console.log(`    👉 Local Port:     ${colors.cyan(data.localPort as string)}`);
+      configFileCommand.remoteHost = data.remoteHost;
+      configFileCommand.remotePort = data.remotePort;
+      configFileCommand.localPort = data.localPort;
     } else if (data.command === CommandType.FileTransfer) {
       console.log(`    👉 EC2 SSH Port: ${colors.cyan(data.sshPort as string)}`);
+      configFileCommand.sshPort = data.sshPort;
     }
     console.log();
 
     if (await confirm({ message: 'Save this command?', default: true })) {
-      await addCommand({
-        name: data.name,
-        profileName: data.profile.Name,
-        region: data.profile.Region,
-        instanceName: data.instance.Name as string,
-        instanceId: data.instance.InstanceId,
-        command: data.command,
-      });
+      await addCommand(configFileCommand);
       if (await confirm({ message: 'Execute this command now?', default: true })) {
 
       }

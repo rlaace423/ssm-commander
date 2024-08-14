@@ -1,9 +1,10 @@
 import { Command as CommanderCommand } from 'commander';
 import { search, select, confirm } from '@inquirer/prompts';
 import * as colors from 'yoctocolors-cjs';
-import { CommandType, ConfigFileCommand, type CreateUserInput, type Instance } from './interface.ts';
+import { CommandType, type CreateUserInput, type Instance } from './interface.ts';
 import * as packageJson from '../package.json';
 import {
+  buildActualCommand,
   getInstances,
   getProfile,
   getProfileNames,
@@ -13,7 +14,7 @@ import {
 } from './aws.ts';
 import { createTable, prompt as Ec2Search } from './table-search.ts';
 import DescriptionInput from './description-input.ts';
-import { addCommand, commandNameExists } from './config.ts';
+import { saveCommand, commandNameExists, convertCreateUserInputToConfigFileCommand } from './config.ts';
 
 if (!isAwsInstalled()) {
   console.error('AWS CLI is not installed. Please install AWS CLI and try again.');
@@ -99,7 +100,7 @@ program
       data.profile.Region = region as string;
     }
 
-    data.command = (await select<CommandType>({
+    data.commandType = (await select<CommandType>({
       message: 'Select the type of "Command" you would like to create',
       choices: [
         {
@@ -133,7 +134,7 @@ program
       },
     })) as Instance;
 
-    if (data.command === CommandType.PortForward) {
+    if (data.commandType === CommandType.PortForward) {
       data.remoteHost = await DescriptionInput({
         message: "Enter Remote Service's Host",
         description:
@@ -153,7 +154,7 @@ program
         required: true,
         validate: validatePort,
       });
-    } else if (data.command === CommandType.FileTransfer) {
+    } else if (data.commandType === CommandType.FileTransfer) {
       data.sshPort = await DescriptionInput({
         message: "Enter Port Number Used by the EC2 Instance's SSH(SCP) Service",
         description: 'File Transfer command uses the SSH(SCP) service of the EC2 instance.',
@@ -165,44 +166,37 @@ program
 
     data.name = await DescriptionInput({
       message: 'Please enter a "Name" for this command',
-      description:
-        'Name will be used to identify and run commands later.',
-      default: `${data.profile.Name}-${data.command}-${data.instance.Name}`,
+      description: 'Name will be used to identify and run commands later.',
+      default: `${data.profile.Name}-${data.commandType}-${data.instance.Name}`,
       required: true,
       validate: validateName,
     });
 
+    const configFileCommand = convertCreateUserInputToConfigFileCommand(data);
     console.log('\n== Review your new "SSM Command" ==');
-    console.log(`✍️ Command Name:    ${colors.cyan(data.name)}`);
-    console.log(`🤵 AWS CLI Profile: ${colors.cyan(data.profile.Name)}`);
-    console.log(`🌏 AWS Region:      ${colors.cyan(data.profile.Region)}`);
-    console.log(`🖥️ EC2 Instance:    ` + colors.cyan(`${data.instance.Name} (${data.instance.InstanceId})`));
-    console.log(`🚀 Command Type:    ${colors.cyan(data.command)}`);
-    const configFileCommand: ConfigFileCommand = {
-      name: data.name,
-      profileName: data.profile.Name,
-      region: data.profile.Region,
-      instanceName: data.instance.Name as string,
-      instanceId: data.instance.InstanceId,
-      command: data.command,
-    };
+    console.log(`✍️ Command Name:    ${colors.cyan(configFileCommand.name)}`);
+    console.log(`🤵 AWS CLI Profile: ${colors.cyan(configFileCommand.profileName)}`);
+    console.log(`🌏 AWS Region:      ${colors.cyan(configFileCommand.region)}`);
+    console.log(
+      `🖥️ EC2 Instance:    ` + colors.cyan(`${configFileCommand.instanceName} (${configFileCommand.instanceId})`),
+    );
+    console.log(`🚀 Command Type:    ${colors.cyan(configFileCommand.commandType)}`);
 
-    if (data.command === CommandType.PortForward) {
-      console.log(`    👉 Remote Service: ` + colors.cyan(`${data.remoteHost} (port ${data.remotePort})`));
-      console.log(`    👉 Local Port:     ${colors.cyan(data.localPort as string)}`);
-      configFileCommand.remoteHost = data.remoteHost;
-      configFileCommand.remotePort = data.remotePort;
-      configFileCommand.localPort = data.localPort;
-    } else if (data.command === CommandType.FileTransfer) {
-      console.log(`    👉 EC2 SSH Port: ${colors.cyan(data.sshPort as string)}`);
-      configFileCommand.sshPort = data.sshPort;
+    if (data.commandType === CommandType.PortForward) {
+      console.log(
+        `    👉 Remote Service: ` +
+          colors.cyan(`${configFileCommand.remoteHost} (port ${configFileCommand.remotePort})`),
+      );
+      console.log(`    👉 Local Port:     ${colors.cyan(configFileCommand.localPort as string)}`);
+    } else if (data.commandType === CommandType.FileTransfer) {
+      console.log(`    👉 EC2 SSH Port: ${colors.cyan(configFileCommand.sshPort as string)}`);
     }
+
     console.log();
-
     if (await confirm({ message: 'Save this command?', default: true })) {
-      await addCommand(configFileCommand);
+      await saveCommand(configFileCommand);
       if (await confirm({ message: 'Execute this command now?', default: true })) {
-
+        console.log(buildActualCommand(configFileCommand));
       }
     }
   });

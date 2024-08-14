@@ -31,7 +31,7 @@ interface CommandOptional {
 export interface CreateUserInput extends CommandOptional {
   name: string;
   profile: Profile;
-  command: CommandType;
+  commandType: CommandType;
   instance: Instance;
 }
 
@@ -41,7 +41,7 @@ export interface ConfigFileCommand extends CommandOptional {
   region: string;
   instanceName: string;
   instanceId: string;
-  command: CommandType;
+  commandType: CommandType;
 }
 
 export interface ConfigFile {

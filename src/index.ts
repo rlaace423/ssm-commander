@@ -13,6 +13,7 @@ import {
 } from './aws.ts';
 import { createTable, prompt as Ec2Search } from './table-search.ts';
 import DescriptionInput from './description-input.ts';
+import { addCommand, commandNameExists } from './config.ts';
 
 if (!isAwsInstalled()) {
   console.error('AWS CLI is not installed. Please install AWS CLI and try again.');
@@ -36,8 +37,12 @@ const validatePort = (text: string): boolean | string => {
   }
 };
 
-const validateName = (text: string): boolean => {
-  return text?.trim?.().length > 0;
+const validateName = async (text: string): Promise<boolean | string> => {
+  const name = text.trim();
+  if (name.length === 0) {
+    return false;
+  }
+  return (await commandNameExists(name)) ? 'Command name already exists. Please choose another.' : true;
 };
 
 program
@@ -180,10 +185,17 @@ program
     } else if (data.command === CommandType.FileTransfer) {
       console.log(`    👉 EC2 SSH Port: ${colors.cyan(data.sshPort as string)}`);
     }
+    console.log();
 
-    if (await confirm({ message: '\nSave this command?', default: true })) {
-      // TODO : save
-      // TODO if save succeeded,
+    if (await confirm({ message: 'Save this command?', default: true })) {
+      await addCommand({
+        name: data.name,
+        profileName: data.profile.Name,
+        region: data.profile.Region,
+        instanceName: data.instance.Name as string,
+        instanceId: data.instance.InstanceId,
+        command: data.command,
+      });
       if (await confirm({ message: 'Execute this command now?', default: true })) {
 
       }

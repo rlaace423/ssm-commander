@@ -211,16 +211,27 @@ export const prompt = createPrompt(<Value>(config: SearchConfig<Value>, done: (v
   ];
 });
 
-function replaceMatchedTextColor(text: string, searchTerm: string, defaultColor: (x: string) => string, matchedColor: (x: string) => string): string {
+function replaceMatchedTextColor(
+  text: string,
+  searchTerm: string,
+  defaultColor: (x: string) => string,
+  matchedColor: (x: string) => string,
+): string {
   if (searchTerm.length === 0) {
     return defaultColor(text);
   } else {
-    return text.split(searchTerm).map((t) => defaultColor(t)).join(matchedColor(searchTerm));
+    return text
+      .split(searchTerm)
+      .map((t) => defaultColor(t))
+      .join(matchedColor(searchTerm));
   }
 }
 
 function replaceAnswer(answer: string): string {
-  const split = answer.split(TABLE_STYLE.vertical).slice(1, -1).map((t) => t.trim());
+  const split = answer
+    .split(TABLE_STYLE.vertical)
+    .slice(1, -1)
+    .map((t) => t.trim());
   // trailing space MATTERs, might be because of how colors.cyan work.
   return `${split[0]} (${split.slice(1).join(', ')}) `;
 }

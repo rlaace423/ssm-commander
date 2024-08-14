@@ -164,6 +164,8 @@ program
       });
     }
 
+    // sometimes this question overlap upper questions. I don't know why.
+    console.log();
     data.name = await DescriptionInput({
       message: 'Please enter a "Name" for this command',
       description: 'Name will be used to identify and run commands later.',

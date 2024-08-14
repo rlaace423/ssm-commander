@@ -101,7 +101,7 @@ export function buildActualCommand(configFileCommand: ConfigFileCommand) {
   if (configFileCommand.commandType === CommandType.Connect) {
     return `aws ssm start-session --profile ${configFileCommand.profileName} --target ${configFileCommand.instanceId}`;
   } else if (configFileCommand.commandType === CommandType.PortForward) {
-    return `aws ssm start-session --profile ${configFileCommand.profileName} -- target ${configFileCommand.instanceId} --document-name AWS-StartPortForwardingSessionToRemoteHost --parameters host="${configFileCommand.remoteHost}",portNumber="${configFileCommand.remotePort}",localPortNumber="${configFileCommand.localPort}"`;
+    return `aws ssm start-session --profile ${configFileCommand.profileName} --target ${configFileCommand.instanceId} --document-name AWS-StartPortForwardingSessionToRemoteHost --parameters host="${configFileCommand.remoteHost}",portNumber="${configFileCommand.remotePort}",localPortNumber="${configFileCommand.localPort}"`;
   } else if (configFileCommand.commandType === CommandType.FileTransfer) {
     const shellPart =
       os.type() === 'Windows_NT' ? 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe' : 'sh -c';

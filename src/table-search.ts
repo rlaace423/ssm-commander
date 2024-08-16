@@ -1,21 +1,21 @@
 import {
   createPrompt,
-  useState,
-  useKeypress,
-  usePrefix,
-  usePagination,
-  useRef,
-  useEffect,
-  useMemo,
   isEnterKey,
-  Separator,
   makeTheme,
+  Separator,
   type Theme,
+  useEffect,
+  useKeypress,
+  useMemo,
+  usePagination,
+  usePrefix,
+  useRef,
+  useState,
 } from '@inquirer/core';
 import * as colors from 'yoctocolors-cjs';
 import figures from '@inquirer/figures';
 import type { PartialDeep } from '@inquirer/type';
-import type { Table } from './interface.ts';
+import { DEFAULT_TABLE_STYLE } from './table.ts';
 
 type SearchTheme = {
   icon: { cursor: string };
@@ -194,11 +194,11 @@ export const prompt = createPrompt(<Value>(config: SearchConfig<Value>, done: (v
   if (status === 'done' && selectedChoice) {
     const converter = config.answerConverter ?? defaultAnswerConverter;
     const answer = converter(
-        selectedChoice.short ??
+      selectedChoice.short ??
         selectedChoice.name ??
         // TODO: Could we enforce that at the type level? Name should be defined for non-string values.
-        String(selectedChoice.value)
-      );
+        String(selectedChoice.value),
+    );
 
     return `${prefix} ${message} ${theme.style.answer(answer)}`;
   } else {
@@ -233,97 +233,9 @@ function replaceMatchedTextColor(
 
 function defaultAnswerConverter(answer: string): string {
   const split = answer
-    .split(TABLE_STYLE.vertical)
+    .split(DEFAULT_TABLE_STYLE.vertical)
     .slice(1, -1)
     .map((t) => t.trim());
   // trailing space MATTERs, might be because of how colors.cyan work.
   return `${split[0]} (${split.slice(1).join(', ')}) `;
-}
-
-const TABLE_STYLE = {
-  headerTop: {
-    left: '┌',
-    mid: '┬',
-    right: '┐',
-    default: '─',
-  },
-  headerBottom: {
-    left: '├',
-    mid: '┼',
-    right: '┤',
-    default: '─',
-  },
-  tableBottom: {
-    left: '└',
-    mid: '┴',
-    right: '┘',
-    default: '─',
-  },
-  vertical: '│',
-};
-
-const CELL_PADDING = 1;
-const MARGIN_LEFT = '  ';
-
-// text.length must be less than or equal to size
-function drawCell(text: string, size: number) {
-  return (
-    ' '.repeat(CELL_PADDING) + text + ' '.repeat(size - text.length) + ' '.repeat(CELL_PADDING) + TABLE_STYLE.vertical
-  );
-}
-
-function calculateMaxLength(
-  fields: string[],
-  contents: Record<string, any>[],
-  headerNames: string[],
-): Record<string, number> {
-  const maxLength = {};
-  for (const field of fields) {
-    maxLength[field] = 0;
-  }
-
-  for (const content of contents) {
-    for (const field of fields) {
-      if ((content[field] ?? '').length > maxLength[field]) {
-        maxLength[field] = (content[field] ?? '').length;
-      }
-    }
-  }
-
-  for (let i = 0; i < fields.length; i = i + 1) {
-    const field = fields[i];
-    maxLength[field] = headerNames[i].length > maxLength[field] ? headerNames[i].length : maxLength[field];
-  }
-
-  return maxLength;
-}
-
-function drawTableLine(fields: string[], maxLength: Record<string, number>, charSet: Record<string, string>): string {
-  let result = charSet.left;
-  result += fields.map((field) => charSet.default.repeat(maxLength[field] + CELL_PADDING * 2)).join(charSet.mid);
-  result += charSet.right + '\n';
-  return result;
-}
-
-export function createTable(fields: string[], contents: Record<string, any>[], customHeaderNames?: string[]): Table {
-  const headerNames = customHeaderNames ?? fields;
-  const maxLength = calculateMaxLength(fields, contents, headerNames);
-
-  // ┌─────┬─────┬─────┬─────┐
-  let header = MARGIN_LEFT + drawTableLine(fields, maxLength, TABLE_STYLE.headerTop);
-  // │ headerNames[0] │ headerNames[1] │ headerNames[1] │ ... │
-  header += MARGIN_LEFT + TABLE_STYLE.vertical;
-  header += [...headerNames.map((name, index) => drawCell(name, maxLength[fields[index]])), '\n'].join('');
-  // ├─────┼─────┼─────┼─────┤
-  header += MARGIN_LEFT + drawTableLine(fields, maxLength, TABLE_STYLE.headerBottom);
-
-  // └─────┴─────┴─────┴─────┘
-  const footer = '\n' + MARGIN_LEFT + drawTableLine(fields, maxLength, TABLE_STYLE.tableBottom);
-
-  const bodies = contents.map((content) => ({
-    name: [TABLE_STYLE.vertical, ...fields.map((field) => drawCell(content[field] ?? '', maxLength[field]))].join(''),
-    value: content,
-  }));
-
-  return { header, footer, bodies };
 }

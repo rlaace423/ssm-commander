@@ -1,7 +1,6 @@
 import { Command as CommanderCommand } from 'commander';
 import { search, select, confirm } from '@inquirer/prompts';
-import * as colors from 'yoctocolors-cjs';
-import { CommandType, type CreateUserInput, type Instance } from './interface.ts';
+import { CommandType, ConfigFileCommand, type CreateUserInput, type Instance } from './interface.ts';
 import * as packageJson from '../package.json';
 import {
   buildActualCommand,
@@ -12,9 +11,17 @@ import {
   isAwsInstalled,
   isSessionManagerPluginInstalled,
 } from './aws.ts';
-import { createTable, prompt as TableSearch } from './table-search.ts';
+import { prompt as TableSearch } from './table-search.ts';
 import DescriptionInput from './description-input.ts';
-import { saveCommand, commandNameExists, convertCreateUserInputToConfigFileCommand, readConfigFile } from './config.ts';
+import {
+  saveCommand,
+  commandNameExists,
+  convertCreateUserInputToConfigFileCommand,
+  readConfigFile,
+  printConfigFileCommand,
+  deleteCommand,
+} from './config.ts';
+import { createTable } from './table.ts';
 
 if (!isAwsInstalled()) {
   console.error('AWS CLI is not installed. Please install AWS CLI and try again.');
@@ -124,7 +131,6 @@ program
     })) as CommandType;
 
     const instances = await getInstances(data.profile.Name);
-    // const table = createTable(instances);
     const table = createTable(
       ['Name', 'InstanceId', 'State', 'InstanceType', 'PublicIpAddress', 'PrivateIpAddress'],
       instances,
@@ -180,26 +186,10 @@ program
     });
 
     const configFileCommand = convertCreateUserInputToConfigFileCommand(data);
-    console.log('\n== Review your new "SSM Command" ==');
-    console.log(`✍️ Command Name:    ${colors.cyan(configFileCommand.name)}`);
-    console.log(`🤵 AWS CLI Profile: ${colors.cyan(configFileCommand.profileName)}`);
-    console.log(`🌏 AWS Region:      ${colors.cyan(configFileCommand.region)}`);
-    console.log(
-      `🖥️ EC2 Instance:    ` + colors.cyan(`${configFileCommand.instanceName} (${configFileCommand.instanceId})`),
-    );
-    console.log(`🚀 Command Type:    ${colors.cyan(configFileCommand.commandType)}`);
-
-    if (data.commandType === CommandType.PortForward) {
-      console.log(
-        `    👉 Remote Service: ` +
-          colors.cyan(`${configFileCommand.remoteHost} (port ${configFileCommand.remotePort})`),
-      );
-      console.log(`    👉 Local Port:     ${colors.cyan(configFileCommand.localPort as string)}`);
-    } else if (data.commandType === CommandType.FileTransfer) {
-      console.log(`    👉 EC2 SSH Port: ${colors.cyan(configFileCommand.sshPort as string)}`);
-    }
-
+    console.log('\n\n== Review your new "SSM Command" ==');
+    printConfigFileCommand(configFileCommand);
     console.log();
+
     if (await confirm({ message: 'Save this command?', default: true })) {
       await saveCommand(configFileCommand);
       if (await confirm({ message: 'Execute this command now?', default: true })) {
@@ -208,18 +198,42 @@ program
     }
   });
 
-program.command('list').description('Displays a list of all saved SSM commands.')
+program
+  .command('list')
+  .description('Displays a list of all saved SSM commands.')
   .action(async () => {
     const config = await readConfigFile();
-    const table = createTable(['name', 'profileName', 'region', 'instanceName', 'instanceId', 'commandType'], config.commands);
-    await TableSearch({
+    if (config.commands.length === 0) {
+      console.error('No saved SSM commands found. Create one using the "create" command.');
+      process.exit(1);
+    }
+
+    const table = createTable(
+      ['name', 'profileName', 'region', 'instanceName', 'instanceId', 'commandType'],
+      config.commands,
+    );
+    const command = (await TableSearch({
       message: 'Select an SSM Command',
       header: table.header,
       bottom: table.footer,
       source: async (input) => {
         return table.bodies.filter((body) => body.name.includes(input ?? ''));
       },
-    })
+    })) as ConfigFileCommand;
+
+    console.log();
+    printConfigFileCommand(command);
+    console.log();
+    const selection = await select({
+      message: 'What would you like to do with this command?',
+      choices: [{ value: 'Run' }, { value: 'Delete' }],
+    });
+
+    if (selection === 'Delete') {
+      await deleteCommand(command);
+      console.log(`Successfully deleted SSM Command "${command.name}"`);
+      process.exit(0);
+    }
   });
 
 program.command('run').description('Executes a saved SSM command.');

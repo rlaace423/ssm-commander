@@ -3,12 +3,12 @@ import type { Instance, Profile } from './interface.ts';
 
 export async function isAwsInstalled(): Promise<boolean> {
   const { exitCode } = await $`aws --version`.nothrow().quiet();
-  return exitCode !== 0;
+  return exitCode === 0;
 }
 
 export async function isSessionManagerPluginInstalled(): Promise<boolean> {
   const { exitCode } = await $`session-manager-plugin`.nothrow().quiet();
-  return exitCode !== 0;
+  return exitCode === 0;
 }
 
 export async function getProfileNames(): Promise<string[]> {

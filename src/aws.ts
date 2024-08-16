@@ -1,28 +1,54 @@
 import { $, ShellError } from 'bun';
 import type { Instance, Profile } from './interface.ts';
 
-export async function isAwsInstalled(): Promise<boolean> {
+export const BINARY_INSTALLED = {
+  aws: false,
+  sessionManagerPlugin: false,
+};
+
+export async function checkAwsInstalled(): Promise<void> {
+  if (BINARY_INSTALLED.aws) {
+    return;
+  }
+
   const { exitCode } = await $`aws --version`.nothrow().quiet();
-  return exitCode === 0;
+  if (exitCode !== 0) {
+    console.error('AWS CLI is not installed. Please install AWS CLI and try again.');
+    process.exit(1);
+  } else {
+    BINARY_INSTALLED.aws = true;
+  }
 }
 
-export async function isSessionManagerPluginInstalled(): Promise<boolean> {
+export async function checkSessionManagerPluginInstalled(): Promise<void> {
+  if (BINARY_INSTALLED.sessionManagerPlugin) {
+    return;
+  }
+
   const { exitCode } = await $`session-manager-plugin`.nothrow().quiet();
-  return exitCode === 0;
+  if (exitCode !== 0) {
+    console.error('session-manager-plugin is not installed. Please install session-manager-plugin and try again.');
+    process.exit(1);
+  } else {
+    BINARY_INSTALLED.sessionManagerPlugin = true;
+  }
 }
 
 export async function getProfileNames(): Promise<string[]> {
+  await checkAwsInstalled();
   const profiles = (await $`aws configure list-profiles`.nothrow().text()).trim();
   return profiles.length === 0 ? [] : profiles.split('\n').map((profile) => profile.trim());
 }
 
 async function getProfileRegion(name: string): Promise<string | null> {
+  await checkAwsInstalled();
   const region = (await $`aws configure get region --profile ${name}`.nothrow().text()).trim();
   return region.length === 0 ? null : region;
 }
 
 export async function getProfile(name: string): Promise<Profile> {
   try {
+    await checkAwsInstalled();
     const profile = await $`aws configure export-credentials --format process --profile ${name}`.json();
     return { ...profile, Name: name, Region: await getProfileRegion(name) };
   } catch (e) {
@@ -50,6 +76,7 @@ function sortAsc(list: any[], field?: string) {
 
 export async function getInstances(profileName: string): Promise<Instance[]> {
   try {
+    await checkAwsInstalled();
     const instances: Instance[] =
       await $`aws ec2 describe-instances --query "Reservations[].Instances[].{InstanceId: InstanceId, InstanceType: InstanceType, PrivateIpAddress: PrivateIpAddress, PublicIpAddress: PublicIpAddress, State: State.Name, Name: Tags[?Key=='Name'].Value | [0]}" --output json --no-cli-pager --profile ${profileName}`.json();
     return sortAsc(instances, 'Name');

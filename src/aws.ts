@@ -1,4 +1,6 @@
 import { $, ShellError } from 'bun';
+import ora, { Ora } from 'ora';
+import * as colors from 'yoctocolors-cjs';
 import type { Instance, Profile } from './interface.ts';
 
 export const BINARY_INSTALLED = {
@@ -6,17 +8,45 @@ export const BINARY_INSTALLED = {
   sessionManagerPlugin: false,
 };
 
+class InstallationSpinner {
+  name: string;
+  spinner: Ora;
+
+  constructor(name) {
+    this.name = name;
+    this.spinner = new ora({ text: colors.cyan(`Checking if ${this.name} installed..`), color: 'cyan' });
+  }
+  start() {
+    this.spinner.start();
+    return this;
+  }
+  stopForSuccess() {
+    this.spinner.stopAndPersist({
+      symbol: colors.green('✔'),
+      text: colors.green(`Checking if ${this.name} installed..`),
+    });
+  }
+  stopForFailure() {
+    this.spinner.stopAndPersist({
+      symbol: colors.red('✘'),
+      text: colors.red(`${this.name} is not installed. Please install ${this.name} and try again.`),
+    });
+  }
+}
+
 export async function checkAwsInstalled(): Promise<void> {
   if (BINARY_INSTALLED.aws) {
     return;
   }
 
+  const spinner = new InstallationSpinner('AWS CLI').start();
   const { exitCode } = await $`aws --version`.nothrow().quiet();
   if (exitCode !== 0) {
-    console.error('AWS CLI is not installed. Please install AWS CLI and try again.');
+    spinner.stopForFailure();
     process.exit(1);
   } else {
     BINARY_INSTALLED.aws = true;
+    spinner.stopForSuccess();
   }
 }
 
@@ -25,12 +55,14 @@ export async function checkSessionManagerPluginInstalled(): Promise<void> {
     return;
   }
 
+  const spinner = new InstallationSpinner('session-manager-plugin').start();
   const { exitCode } = await $`session-manager-plugin`.nothrow().quiet();
   if (exitCode !== 0) {
-    console.error('session-manager-plugin is not installed. Please install session-manager-plugin and try again.');
+    spinner.stopForFailure();
     process.exit(1);
   } else {
     BINARY_INSTALLED.sessionManagerPlugin = true;
+    spinner.stopForSuccess();
   }
 }
 

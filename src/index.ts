@@ -124,13 +124,18 @@ program
     })) as CommandType;
 
     const instances = await getInstances(data.profile.Name);
-    const table = createTable(instances);
+    // const table = createTable(instances);
+    const table = createTable(
+      ['Name', 'InstanceId', 'State', 'InstanceType', 'PublicIpAddress', 'PrivateIpAddress'],
+      instances,
+      ['Tag:Name', 'Instance Id', 'State', 'Type', 'Public IP', 'Private IP'],
+    );
     data.instance = (await Ec2Search({
       message: 'Select an EC2 instance',
       header: table.header,
-      bottom: table.bottom,
+      bottom: table.footer,
       source: async (input) => {
-        return table.choices.filter((choice) => choice.name.includes(input ?? ''));
+        return table.bodies.filter((choice) => choice.name.includes(input ?? ''));
       },
     })) as Instance;
 

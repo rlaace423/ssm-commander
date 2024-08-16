@@ -1,4 +1,4 @@
-import * as os from 'node:os';
+import os from 'node:os';
 import { $, file, write } from 'bun';
 import type { ConfigFile, ConfigFileCommand, CreateUserInput } from './interface.ts';
 import { CommandType } from './interface.ts';
@@ -6,7 +6,7 @@ import * as colors from 'yoctocolors-cjs';
 
 const CONFIG_DIRECTORY_PATH = `${os.homedir()}/.ssm-commander`;
 const CONFIG_FILE_PATH = `${CONFIG_DIRECTORY_PATH}/config.json`;
-// BUMP UP IF ConfigFile changed
+// BUMP UP IF ConfigFile's structure changed
 const CONFIG_VERSION = '1.0';
 
 async function createConfigDirectory() {
@@ -80,4 +80,29 @@ export async function deleteCommand(target: ConfigFileCommand) {
   const configFile = await readConfigFile();
   configFile.commands = configFile.commands.filter((command) => command.name !== target.name);
   await writeConfigFile(configFile);
+}
+
+export function buildActualCommand(configFileCommand: ConfigFileCommand) {
+  if (configFileCommand.commandType === CommandType.Connect) {
+    return `aws ssm start-session --profile ${configFileCommand.profileName} --target ${configFileCommand.instanceId}`;
+  } else if (configFileCommand.commandType === CommandType.PortForward) {
+    return `aws ssm start-session --profile ${configFileCommand.profileName} --target ${configFileCommand.instanceId} --document-name AWS-StartPortForwardingSessionToRemoteHost --parameters host="${configFileCommand.remoteHost}",portNumber="${configFileCommand.remotePort}",localPortNumber="${configFileCommand.localPort}"`;
+  } else if (configFileCommand.commandType === CommandType.FileTransfer) {
+    const shellStarter = os.type() === 'Windows_NT' ? 'powershell -Command' : 'sh -c';
+    return `scp -o ProxyCommand="${shellStarter} 'aws ssm start-session --profile ${configFileCommand.profileName} --target ${configFileCommand.instanceId} --document-name AWS-StartSSHSession --parameters portNumber=${configFileCommand.sshPort}'" `;
+  }
+}
+
+export async function runCommand(command: ConfigFileCommand): Promise<void> {
+  const actualCommand = buildActualCommand(command);
+  console.log(colors.cyan(`\nRunning SSM Command "${command.name}"`));
+  console.log(colors.cyan(`${actualCommand}\n`));
+
+  if (os.type() === 'Windows_NT') {
+    await $`powershell -Command ${actualCommand}`;
+  } else {
+    await $`sh -c ${actualCommand}`;
+  }
+
+  process.exit(0);
 }

@@ -48,3 +48,9 @@ export interface ConfigFile {
   version: string;
   commands: ConfigFileCommand[];
 }
+
+export interface Table {
+  header: string;
+  footer: string;
+  bodies: { name: string; value: any }[];
+}

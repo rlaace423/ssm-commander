@@ -15,7 +15,7 @@ import {
 import * as colors from 'yoctocolors-cjs';
 import figures from '@inquirer/figures';
 import type { PartialDeep } from '@inquirer/type';
-import type { Instance } from './interface.ts';
+import type { Table } from './interface.ts';
 
 type SearchTheme = {
   icon: { cursor: string };
@@ -258,82 +258,8 @@ const TABLE_STYLE = {
   vertical: '│',
 };
 
-const HEADER_TITLE = {
-  Name: 'Tag:Name',
-  InstanceId: 'Instance Id',
-  State: 'State',
-  InstanceType: 'Type',
-  PublicIpAddress: 'Public IP',
-  PrivateIpAddress: 'Private IP',
-};
-
 const CELL_PADDING = 1;
 const MARGIN_LEFT = '  ';
-
-function calculateMaxLength(instances: Instance[]) {
-  const maxLength = {
-    Name: 0,
-    InstanceId: 0,
-    State: 0,
-    InstanceType: 0,
-    PublicIpAddress: 0,
-    PrivateIpAddress: 0,
-  };
-
-  for (const instance of instances) {
-    if ((instance.Name ?? '').length > maxLength.Name) {
-      maxLength.Name = (instance.Name ?? '').length;
-    }
-    if (instance.InstanceId.length > maxLength.InstanceId) {
-      maxLength.InstanceId = instance.InstanceId.length;
-    }
-    if (instance.State.length > maxLength.State) {
-      maxLength.State = instance.State.length;
-    }
-    if (instance.InstanceType.length > maxLength.InstanceType) {
-      maxLength.InstanceType = instance.InstanceType.length;
-    }
-    if ((instance.PublicIpAddress ?? '').length > maxLength.PublicIpAddress) {
-      maxLength.PublicIpAddress = (instance.PublicIpAddress ?? '').length;
-    }
-    if (instance.PrivateIpAddress.length > maxLength.PrivateIpAddress) {
-      maxLength.PrivateIpAddress = instance.PrivateIpAddress.length;
-    }
-  }
-
-  maxLength.Name = HEADER_TITLE.Name.length > maxLength.Name ? HEADER_TITLE.Name.length : maxLength.Name;
-  maxLength.InstanceId =
-    HEADER_TITLE.InstanceId.length > maxLength.InstanceId ? HEADER_TITLE.InstanceId.length : maxLength.InstanceId;
-  maxLength.State = HEADER_TITLE.State.length > maxLength.State ? HEADER_TITLE.State.length : maxLength.State;
-  maxLength.InstanceType =
-    HEADER_TITLE.InstanceType.length > maxLength.InstanceType
-      ? HEADER_TITLE.InstanceType.length
-      : maxLength.InstanceType;
-  maxLength.PublicIpAddress =
-    HEADER_TITLE.PublicIpAddress.length > maxLength.PublicIpAddress
-      ? HEADER_TITLE.PublicIpAddress.length
-      : maxLength.PublicIpAddress;
-  maxLength.PrivateIpAddress =
-    HEADER_TITLE.PrivateIpAddress.length > maxLength.PrivateIpAddress
-      ? HEADER_TITLE.PrivateIpAddress.length
-      : maxLength.PrivateIpAddress;
-
-  return maxLength;
-}
-
-function drawTableLine(chars: Record<string, string>, maxLength: Record<string, number>): string {
-  let result = chars.left;
-  result += [
-    chars.default.repeat(maxLength.Name + CELL_PADDING * 2),
-    chars.default.repeat(maxLength.InstanceId + CELL_PADDING * 2),
-    chars.default.repeat(maxLength.State + CELL_PADDING * 2),
-    chars.default.repeat(maxLength.InstanceType + CELL_PADDING * 2),
-    chars.default.repeat(maxLength.PublicIpAddress + CELL_PADDING * 2),
-    chars.default.repeat(maxLength.PrivateIpAddress + CELL_PADDING * 2),
-  ].join(chars.mid);
-  result += chars.right + '\n';
-  return result;
-}
 
 // text.length must be less than or equal to size
 function drawCell(text: string, size: number) {
@@ -342,43 +268,58 @@ function drawCell(text: string, size: number) {
   );
 }
 
-export function createTable(instances: Instance[]) {
-  const maxLength = calculateMaxLength(instances);
-
-  // ┌─────┬─────┬─────┬─────┐
-  let header = MARGIN_LEFT + drawTableLine(TABLE_STYLE.headerTop, maxLength);
-
-  // │ Tag:Name │ Instance Id │ State │ Type │ Public IP │ Private IP │
-  header += MARGIN_LEFT + TABLE_STYLE.vertical;
-  header += [
-    drawCell(HEADER_TITLE.Name, maxLength.Name),
-    drawCell(HEADER_TITLE.InstanceId, maxLength.InstanceId),
-    drawCell(HEADER_TITLE.State, maxLength.State),
-    drawCell(HEADER_TITLE.InstanceType, maxLength.InstanceType),
-    drawCell(HEADER_TITLE.PublicIpAddress, maxLength.PublicIpAddress),
-    drawCell(HEADER_TITLE.PrivateIpAddress, maxLength.PrivateIpAddress),
-    '\n',
-  ].join('');
-
-  // ├─────┼─────┼─────┼─────┤
-  header += MARGIN_LEFT + drawTableLine(TABLE_STYLE.headerBottom, maxLength);
-
-  const choices: { name: string; value: any }[] = [];
-  for (const instance of instances) {
-    const name = [
-      TABLE_STYLE.vertical,
-      drawCell(instance.Name ?? '', maxLength.Name),
-      drawCell(instance.InstanceId, maxLength.InstanceId),
-      drawCell(instance.State, maxLength.State),
-      drawCell(instance.InstanceType, maxLength.InstanceType),
-      drawCell(instance.PublicIpAddress ?? '', maxLength.PublicIpAddress),
-      drawCell(instance.PrivateIpAddress, maxLength.PrivateIpAddress),
-    ].join('');
-    const value = instance;
-    choices.push({ name, value });
+function calculateMaxLength(
+  fields: string[],
+  contents: Record<string, any>[],
+  headerNames: string[],
+): Record<string, number> {
+  const maxLength = {};
+  for (const field of fields) {
+    maxLength[field] = 0;
   }
 
+  for (const content of contents) {
+    for (const field of fields) {
+      if ((content[field] ?? '').length > maxLength[field]) {
+        maxLength[field] = (content[field] ?? '').length;
+      }
+    }
+  }
+
+  for (let i = 0; i < fields.length; i = i + 1) {
+    const field = fields[i];
+    maxLength[field] = headerNames[i].length > maxLength[field] ? headerNames[i].length : maxLength[field];
+  }
+
+  return maxLength;
+}
+
+function drawTableLine(fields: string[], maxLength: Record<string, number>, charSet: Record<string, string>): string {
+  let result = charSet.left;
+  result += fields.map((field) => charSet.default.repeat(maxLength[field] + CELL_PADDING * 2)).join(charSet.mid);
+  result += charSet.right + '\n';
+  return result;
+}
+
+export function createTable(fields: string[], contents: Record<string, any>[], customHeaderNames: string[]): Table {
+  const headerNames = customHeaderNames ?? fields;
+  const maxLength = calculateMaxLength(fields, contents, headerNames);
+
+  // ┌─────┬─────┬─────┬─────┐
+  let header = MARGIN_LEFT + drawTableLine(fields, maxLength, TABLE_STYLE.headerTop);
+  // │ headerNames[0] │ headerNames[1] │ headerNames[1] │ ... │
+  header += MARGIN_LEFT + TABLE_STYLE.vertical;
+  header += [...headerNames.map((name, index) => drawCell(name, maxLength[fields[index]])), '\n'].join('');
+  // ├─────┼─────┼─────┼─────┤
+  header += MARGIN_LEFT + drawTableLine(fields, maxLength, TABLE_STYLE.headerBottom);
+
   // └─────┴─────┴─────┴─────┘
-  const bottom = '\n' + MARGIN_LEFT + drawTableLine(TABLE_STYLE.tableBottom, maxLength);
-  return { header, bottom, choices };
+  const footer = '\n' + MARGIN_LEFT + drawTableLine(fields, maxLength, TABLE_STYLE.tableBottom);
+
+  const bodies = contents.map((content) => ({
+    name: [TABLE_STYLE.vertical, ...fields.map((field) => drawCell(content[field] ?? '', maxLength[field]))].join(''),
+    value: content,
+  }));
+
+  return { header, footer, bodies };
 }

@@ -56,6 +56,7 @@ type SearchConfig<Value> = {
   ) => ReadonlyArray<Choice<Value> | Separator> | Promise<ReadonlyArray<Choice<Value> | Separator>>;
   pageSize?: number;
   theme?: PartialDeep<Theme<SearchTheme>>;
+  answerConverter?: (answer: string) => string;
 };
 
 type Item<Value> = Separator | Choice<Value>;
@@ -191,12 +192,15 @@ export const prompt = createPrompt(<Value>(config: SearchConfig<Value>, done: (v
 
   let searchStr;
   if (status === 'done' && selectedChoice) {
-    const answer =
-      selectedChoice.short ??
-      selectedChoice.name ??
-      // TODO: Could we enforce that at the type level? Name should be defined for non-string values.
-      String(selectedChoice.value);
-    return `${prefix} ${message} ${theme.style.answer(replaceAnswer(answer))}`;
+    const converter = config.answerConverter ?? defaultAnswerConverter;
+    const answer = converter(
+        selectedChoice.short ??
+        selectedChoice.name ??
+        // TODO: Could we enforce that at the type level? Name should be defined for non-string values.
+        String(selectedChoice.value)
+      );
+
+    return `${prefix} ${message} ${theme.style.answer(answer)}`;
   } else {
     searchStr = theme.style.searchTerm(searchTerm);
   }
@@ -227,7 +231,7 @@ function replaceMatchedTextColor(
   }
 }
 
-function replaceAnswer(answer: string): string {
+function defaultAnswerConverter(answer: string): string {
   const split = answer
     .split(TABLE_STYLE.vertical)
     .slice(1, -1)
@@ -301,7 +305,7 @@ function drawTableLine(fields: string[], maxLength: Record<string, number>, char
   return result;
 }
 
-export function createTable(fields: string[], contents: Record<string, any>[], customHeaderNames: string[]): Table {
+export function createTable(fields: string[], contents: Record<string, any>[], customHeaderNames?: string[]): Table {
   const headerNames = customHeaderNames ?? fields;
   const maxLength = calculateMaxLength(fields, contents, headerNames);
 

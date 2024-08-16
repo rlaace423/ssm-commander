@@ -2,14 +2,7 @@ import { Command as CommanderCommand } from 'commander';
 import { search, select, confirm } from '@inquirer/prompts';
 import { CommandType, ConfigFileCommand, type CreateUserInput, type Instance } from './interface.ts';
 import * as packageJson from '../package.json';
-import {
-  getInstances,
-  getProfile,
-  getProfileNames,
-  getRegions,
-  isAwsInstalled,
-  isSessionManagerPluginInstalled,
-} from './aws.ts';
+import { getInstances, getProfile, getProfileNames, getRegions } from './aws.ts';
 import { prompt as TableSearch } from './table-search.ts';
 import DescriptionInput from './description-input.ts';
 import {
@@ -22,16 +15,6 @@ import {
   runCommand,
 } from './config.ts';
 import { createTable } from './table.ts';
-
-if (!(await isAwsInstalled())) {
-  console.error('AWS CLI is not installed. Please install AWS CLI and try again.');
-  process.exit(1);
-}
-
-if (!(await isSessionManagerPluginInstalled())) {
-  console.error('session-manager-plugin is not installed. Please install session-manager-plugin and try again.');
-  process.exit(1);
-}
 
 const program = new CommanderCommand();
 program.name(packageJson.name).description(packageJson.description).version(packageJson.version);

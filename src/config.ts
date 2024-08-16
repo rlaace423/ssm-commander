@@ -3,6 +3,7 @@ import { $, file, write } from 'bun';
 import type { ConfigFile, ConfigFileCommand, CreateUserInput } from './interface.ts';
 import { CommandType } from './interface.ts';
 import * as colors from 'yoctocolors-cjs';
+import { checkAwsInstalled, checkSessionManagerPluginInstalled } from './aws.ts';
 
 const CONFIG_DIRECTORY_PATH = `${os.homedir()}/.ssm-commander`;
 const CONFIG_FILE_PATH = `${CONFIG_DIRECTORY_PATH}/config.json`;
@@ -94,6 +95,9 @@ export function buildActualCommand(configFileCommand: ConfigFileCommand) {
 }
 
 export async function runCommand(command: ConfigFileCommand): Promise<void> {
+  await checkAwsInstalled();
+  await checkSessionManagerPluginInstalled();
+
   const actualCommand = buildActualCommand(command);
   console.log(colors.cyan(`\nRunning SSM Command "${command.name}"`));
   console.log(colors.cyan(`${actualCommand}\n`));

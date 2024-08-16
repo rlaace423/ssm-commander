@@ -23,12 +23,12 @@ import {
 } from './config.ts';
 import { createTable } from './table.ts';
 
-if (!await isAwsInstalled()) {
+if (!(await isAwsInstalled())) {
   console.error('AWS CLI is not installed. Please install AWS CLI and try again.');
   process.exit(1);
 }
 
-if (!await isSessionManagerPluginInstalled()) {
+if (!(await isSessionManagerPluginInstalled())) {
   console.error('session-manager-plugin is not installed. Please install session-manager-plugin and try again.');
   process.exit(1);
 }
@@ -190,11 +190,13 @@ program
     printConfigFileCommand(configFileCommand);
     console.log();
 
-    if (await confirm({ message: 'Save this command?', default: true })) {
+    const confirmSave = await confirm({ message: 'Save this command?', default: true });
+    const confirmRun = await confirm({ message: 'Execute this command now?', default: true });
+    if (confirmSave) {
       await saveCommand(configFileCommand);
-      if (await confirm({ message: 'Execute this command now?', default: true })) {
-        await runCommand(configFileCommand);
-      }
+    }
+    if (confirmRun) {
+      await runCommand(configFileCommand);
     }
   });
 

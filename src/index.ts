@@ -12,9 +12,9 @@ import {
   isAwsInstalled,
   isSessionManagerPluginInstalled,
 } from './aws.ts';
-import { createTable, prompt as Ec2Search } from './table-search.ts';
+import { createTable, prompt as TableSearch } from './table-search.ts';
 import DescriptionInput from './description-input.ts';
-import { saveCommand, commandNameExists, convertCreateUserInputToConfigFileCommand } from './config.ts';
+import { saveCommand, commandNameExists, convertCreateUserInputToConfigFileCommand, readConfigFile } from './config.ts';
 
 if (!isAwsInstalled()) {
   console.error('AWS CLI is not installed. Please install AWS CLI and try again.');
@@ -130,12 +130,12 @@ program
       instances,
       ['Tag:Name', 'Instance Id', 'State', 'Type', 'Public IP', 'Private IP'],
     );
-    data.instance = (await Ec2Search({
+    data.instance = (await TableSearch({
       message: 'Select an EC2 instance',
       header: table.header,
       bottom: table.footer,
       source: async (input) => {
-        return table.bodies.filter((choice) => choice.name.includes(input ?? ''));
+        return table.bodies.filter((body) => body.name.includes(input ?? ''));
       },
     })) as Instance;
 
@@ -208,7 +208,19 @@ program
     }
   });
 
-program.command('list').description('Displays a list of all saved SSM commands.');
+program.command('list').description('Displays a list of all saved SSM commands.')
+  .action(async () => {
+    const config = await readConfigFile();
+    const table = createTable(['name', 'profileName', 'region', 'instanceName', 'instanceId', 'commandType'], config.commands);
+    await TableSearch({
+      message: 'Select an SSM Command',
+      header: table.header,
+      bottom: table.footer,
+      source: async (input) => {
+        return table.bodies.filter((body) => body.name.includes(input ?? ''));
+      },
+    })
+  });
 
 program.command('run').description('Executes a saved SSM command.');
 

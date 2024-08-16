@@ -17,7 +17,7 @@ async function writeConfigFile(content: ConfigFile) {
   await write(CONFIG_FILE_PATH, JSON.stringify(content));
 }
 
-async function readConfigFile(): Promise<ConfigFile> {
+export async function readConfigFile(): Promise<ConfigFile> {
   const configFile = file(CONFIG_FILE_PATH);
 
   if (!(await configFile.exists())) {

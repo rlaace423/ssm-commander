@@ -236,6 +236,20 @@ program
     }
   });
 
-program.command('run').description('Executes a saved SSM command.');
+program
+  .command('run')
+  .description('Executes a saved SSM command.')
+  .argument('<name>', 'The name of the SSM command you want to execute')
+  .action(async (name) => {
+    const config = await readConfigFile();
+    const command = config.commands.find((c) => c.name === name);
+
+    if (!command) {
+      console.error(`No SSM command found with the name '${name}'. Please check the name and try again.`);
+      process.exit(1);
+    }
+
+    printConfigFileCommand(command);
+  });
 
 await program.parseAsync();

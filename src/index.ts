@@ -3,7 +3,6 @@ import { search, select, confirm } from '@inquirer/prompts';
 import { CommandType, ConfigFileCommand, type CreateUserInput, type Instance } from './interface.ts';
 import * as packageJson from '../package.json';
 import {
-  buildActualCommand,
   getInstances,
   getProfile,
   getProfileNames,
@@ -20,6 +19,7 @@ import {
   readConfigFile,
   printConfigFileCommand,
   deleteCommand,
+  runCommand,
 } from './config.ts';
 import { createTable } from './table.ts';
 
@@ -193,7 +193,7 @@ program
     if (await confirm({ message: 'Save this command?', default: true })) {
       await saveCommand(configFileCommand);
       if (await confirm({ message: 'Execute this command now?', default: true })) {
-        console.log(buildActualCommand(configFileCommand));
+        await runCommand(configFileCommand);
       }
     }
   });
@@ -229,7 +229,9 @@ program
       choices: [{ value: 'Run' }, { value: 'Delete' }],
     });
 
-    if (selection === 'Delete') {
+    if (selection === 'Run') {
+      await runCommand(command);
+    } else if (selection === 'Delete') {
       await deleteCommand(command);
       console.log(`Successfully deleted SSM Command "${command.name}"`);
       process.exit(0);
@@ -250,6 +252,7 @@ program
     }
 
     printConfigFileCommand(command);
+    await runCommand(command);
   });
 
 await program.parseAsync();

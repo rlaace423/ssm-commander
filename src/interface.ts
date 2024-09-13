@@ -29,10 +29,10 @@ interface CommandOptional {
 }
 
 export interface CreateUserInput extends CommandOptional {
-  name: string;
-  profile: Profile;
-  commandType: CommandType;
-  instance: Instance;
+  name: string | undefined;
+  profile: Profile | undefined;
+  commandType: CommandType | undefined;
+  instance: Instance | undefined;
 }
 
 export interface ConfigFileCommand extends CommandOptional {
@@ -52,5 +52,5 @@ export interface ConfigFile {
 export interface Table {
   header: string;
   footer: string;
-  bodies: { name: string; value: any }[];
+  bodies: Array<{ name: string; value: any }>;
 }

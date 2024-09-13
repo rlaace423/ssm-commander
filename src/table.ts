@@ -25,7 +25,7 @@ const CELL_PADDING = 1;
 const MARGIN_LEFT = '  ';
 
 // text.length must be less than or equal to size
-function drawCell(text: string, size: number) {
+function drawCell(text: string, size: number): string {
   return (
     ' '.repeat(CELL_PADDING) +
     text +
@@ -37,10 +37,10 @@ function drawCell(text: string, size: number) {
 
 function calculateMaxLength(
   fields: string[],
-  contents: Record<string, any>[],
+  contents: Array<Record<string, any>>,
   headerNames: string[],
 ): Record<string, number> {
-  const maxLength = {};
+  const maxLength: Record<string, any> = {};
   for (const field of fields) {
     maxLength[field] = 0;
   }
@@ -68,7 +68,7 @@ function drawTableLine(fields: string[], maxLength: Record<string, number>, char
   return result;
 }
 
-export function createTable(fields: string[], contents: Record<string, any>[], customHeaderNames?: string[]): Table {
+export function createTable(fields: string[], contents: Array<Record<string, any>>, customHeaderNames?: string[]): Table {
   const headerNames = customHeaderNames ?? fields;
   const maxLength = calculateMaxLength(fields, contents, headerNames);
 

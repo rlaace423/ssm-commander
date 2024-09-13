@@ -1,7 +1,7 @@
-import { $, type ShellError } from 'bun';
 import { Ora } from 'ora';
 import colors from 'yoctocolors-cjs';
 import type { Instance, Profile } from './interface.ts';
+import { execSync } from 'node:child_process';
 
 export const BINARY_INSTALLED = {
   aws: false,
@@ -45,13 +45,13 @@ export async function checkAwsInstalled(): Promise<void> {
   }
 
   const spinner = new InstallationSpinner('AWS CLI').start();
-  const { exitCode } = await $`aws --version`.nothrow().quiet();
-  if (exitCode !== 0) {
-    spinner.stopForFailure();
-    process.exit(1);
-  } else {
+  try {
+    execSync('aws --version', { encoding: 'utf-8' });
     BINARY_INSTALLED.aws = true;
     spinner.stopForSuccess();
+  } catch (e) {
+    spinner.stopForFailure();
+    process.exit(1);
   }
 }
 
@@ -61,32 +61,46 @@ export async function checkSessionManagerPluginInstalled(): Promise<void> {
   }
 
   const spinner = new InstallationSpinner('session-manager-plugin').start();
-  const { exitCode } = await $`session-manager-plugin`.nothrow().quiet();
-  if (exitCode !== 0) {
-    spinner.stopForFailure();
-    process.exit(1);
-  } else {
+  try {
+    execSync('session-manager-plugin', { encoding: 'utf-8' });
     BINARY_INSTALLED.sessionManagerPlugin = true;
     spinner.stopForSuccess();
+  } catch (e) {
+    spinner.stopForFailure();
+    process.exit(1);
   }
 }
 
 export async function getProfileNames(): Promise<string[]> {
   await checkAwsInstalled();
-  const profiles = (await $`aws configure list-profiles`.nothrow().text()).trim();
+  // todo: test
+  let profiles;
+  try {
+    profiles = execSync('aws configure list-profiles', { encoding: 'utf-8' }).trim();
+  } catch (e) {
+    return [];
+  }
   return profiles.length === 0 ? [] : profiles.split('\n').map((profile: string) => profile.trim());
 }
 
 async function getProfileRegion(name: string): Promise<string | null> {
   await checkAwsInstalled();
-  const region = (await $`aws configure get region --profile ${name}`.nothrow().text()).trim();
+  // todo: test
+  let region;
+  try {
+    region = execSync(`aws configure get region --profile ${name}`, { encoding: 'utf-8' }).trim();
+  } catch (e) {
+    return null;
+  }
   return region.length === 0 ? null : region;
 }
 
 export async function getProfile(name: string): Promise<Profile> {
   try {
     await checkAwsInstalled();
-    const profile = await $`aws configure export-credentials --format process --profile ${name}`.json();
+    const profile = JSON.parse(
+      execSync(`aws configure export-credentials --format process --profile ${name}`, { encoding: 'utf-8' }).trim(),
+    );
     return { ...profile, Name: name, Region: await getProfileRegion(name) };
   } catch (e) {
     console.error(`Invalid AWS CLI profile ${name}`);
@@ -114,11 +128,15 @@ function sortAsc(list: any[], field?: string): any[] {
 export async function getInstances(profileName: string): Promise<Instance[]> {
   try {
     await checkAwsInstalled();
-    const instances: Instance[] =
-      await $`aws ec2 describe-instances --query "Reservations[].Instances[].{InstanceId: InstanceId, InstanceType: InstanceType, PrivateIpAddress: PrivateIpAddress, PublicIpAddress: PublicIpAddress, State: State.Name, Name: Tags[?Key=='Name'].Value | [0]}" --output json --no-cli-pager --profile ${profileName}`.json();
+    const instances: Instance[] = JSON.parse(
+      execSync(`aws ec2 describe-instances --query "Reservations[].Instances[].{InstanceId: InstanceId, InstanceType: InstanceType, PrivateIpAddress: PrivateIpAddress, PublicIpAddress: PublicIpAddress, State: State.Name, Name: Tags[?Key=='Name'].Value | [0]}" --output json --no-cli-pager --profile ${profileName}`, { encoding: 'utf-8' }).trim(),
+    );
     return sortAsc(instances, 'Name');
   } catch (e) {
-    throw new Error((e as ShellError).stderr.toString().trim());
+    // todo: test
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-expect-error
+    throw new Error(e.stderr.toString());
   }
 }
 

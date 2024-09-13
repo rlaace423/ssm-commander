@@ -1,20 +1,28 @@
 import os from 'node:os';
+import { execSync } from 'node:child_process';
 import { $, file, write } from 'bun';
-import type { ConfigFile, ConfigFileCommand, CreateUserInput } from './interface.ts';
-import { CommandType } from './interface.ts';
-import * as colors from 'yoctocolors-cjs';
-import { checkAwsInstalled, checkSessionManagerPluginInstalled } from './aws.ts';
+import {
+  type ConfigFile,
+  type ConfigFileCommand,
+  type CreateUserInput,
+  CommandType,
+  type Profile,
+  type Instance,
+} from './interface';
+import colors from 'yoctocolors-cjs';
+import { checkAwsInstalled, checkSessionManagerPluginInstalled } from './aws';
+import * as fs from 'node:fs';
 
 const CONFIG_DIRECTORY_PATH = `${os.homedir()}/.ssm-commander`;
 const CONFIG_FILE_PATH = `${CONFIG_DIRECTORY_PATH}/config.json`;
 // BUMP UP IF ConfigFile's structure changed
 const CONFIG_VERSION = '1.0';
 
-async function createConfigDirectory() {
-  await $`mkdir -p ${CONFIG_DIRECTORY_PATH}`;
+async function createConfigDirectory(): Promise<void> {
+  fs.mkdirSync(CONFIG_DIRECTORY_PATH, { recursive: true });
 }
 
-async function writeConfigFile(content: ConfigFile) {
+async function writeConfigFile(content: ConfigFile): Promise<void> {
   await createConfigDirectory();
   await write(CONFIG_FILE_PATH, JSON.stringify(content));
 }
@@ -31,9 +39,9 @@ export async function readConfigFile(): Promise<ConfigFile> {
   }
 }
 
-export async function commandNameExists(commandName: string) {
+export async function commandNameExists(commandName: string): Promise<boolean> {
   const configFile = await readConfigFile();
-  return configFile.commands.find((command) => command.name === commandName);
+  return !!configFile.commands.find((command) => command.name === commandName);
 }
 
 export function printConfigFileCommand(command: ConfigFileCommand): void {
@@ -53,12 +61,12 @@ export function printConfigFileCommand(command: ConfigFileCommand): void {
 
 export function convertCreateUserInputToConfigFileCommand(data: CreateUserInput): ConfigFileCommand {
   const configFileCommand: ConfigFileCommand = {
-    name: data.name,
-    profileName: data.profile.Name,
-    region: data.profile.Region as string,
-    instanceName: data.instance.Name as string,
-    instanceId: data.instance.InstanceId,
-    commandType: data.commandType,
+    name: data.name as string,
+    profileName: (data.profile as unknown as Profile).Name,
+    region: (data.profile as unknown as Profile).Region as string,
+    instanceName: (data.instance as unknown as Instance).Name as string,
+    instanceId: (data.instance as unknown as Instance).InstanceId,
+    commandType: data.commandType as CommandType,
   };
   if (data.commandType === CommandType.PortForward) {
     configFileCommand.remoteHost = data.remoteHost;
@@ -70,20 +78,20 @@ export function convertCreateUserInputToConfigFileCommand(data: CreateUserInput)
   return configFileCommand;
 }
 
-export async function saveCommand(command: ConfigFileCommand) {
+export async function saveCommand(command: ConfigFileCommand): Promise<void> {
   const configFile = await readConfigFile();
 
   configFile.commands.push(command);
   await writeConfigFile(configFile);
 }
 
-export async function deleteCommand(target: ConfigFileCommand) {
+export async function deleteCommand(target: ConfigFileCommand): Promise<void> {
   const configFile = await readConfigFile();
   configFile.commands = configFile.commands.filter((command) => command.name !== target.name);
   await writeConfigFile(configFile);
 }
 
-export function buildActualCommand(configFileCommand: ConfigFileCommand) {
+export function buildActualCommand(configFileCommand: ConfigFileCommand): string {
   if (configFileCommand.commandType === CommandType.Connect) {
     return `aws ssm start-session --profile ${configFileCommand.profileName} --target ${configFileCommand.instanceId}`;
   } else if (configFileCommand.commandType === CommandType.PortForward) {
@@ -91,6 +99,8 @@ export function buildActualCommand(configFileCommand: ConfigFileCommand) {
   } else if (configFileCommand.commandType === CommandType.FileTransfer) {
     const shellStarter = os.type() === 'Windows_NT' ? 'powershell -Command' : 'sh -c';
     return `scp -o ProxyCommand="${shellStarter} 'aws ssm start-session --profile ${configFileCommand.profileName} --target ${configFileCommand.instanceId} --document-name AWS-StartSSHSession --parameters portNumber=${configFileCommand.sshPort}'" `;
+  } else {
+    throw new Error('unsupported CommandType');
   }
 }
 
@@ -105,7 +115,18 @@ export async function runCommand(command: ConfigFileCommand): Promise<void> {
   if (os.type() === 'Windows_NT') {
     await $`powershell -Command ${actualCommand}`;
   } else {
-    await $`sh -c ${actualCommand}`;
+    // await $`sh -c ${actualCommand}`;
+    process.on('SIGINT', () => {
+      console.log('SIGINT (Ctrl+C) received, forwarding to child process.');
+    });
+
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.setEncoding('utf-8');
+    execSync('~/.ssm-commander/test.sh', { stdio: 'inherit' });
+    process.stdin.setRawMode(false);
+    process.stdin.pause();
+    process.exit();
   }
 
   process.exit(0);

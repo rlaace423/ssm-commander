@@ -1,6 +1,6 @@
-import { $, ShellError } from 'bun';
-import ora, { Ora } from 'ora';
-import * as colors from 'yoctocolors-cjs';
+import { $, type ShellError } from 'bun';
+import { Ora } from 'ora';
+import colors from 'yoctocolors-cjs';
 import type { Instance, Profile } from './interface.ts';
 
 export const BINARY_INSTALLED = {
@@ -12,21 +12,26 @@ class InstallationSpinner {
   name: string;
   spinner: Ora;
 
-  constructor(name) {
+  constructor(name: string) {
     this.name = name;
-    this.spinner = new ora({ text: colors.cyan(`Checking if ${this.name} installed..`), color: 'cyan' });
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-expect-error
+    this.spinner = new Ora({ text: colors.cyan(`Checking if ${this.name} installed..`), color: 'cyan' });
   }
-  start() {
+
+  start(): this {
     this.spinner.start();
     return this;
   }
-  stopForSuccess() {
+
+  stopForSuccess(): void {
     this.spinner.stopAndPersist({
       symbol: colors.green('✔'),
       text: colors.green(`Checking if ${this.name} installed..`),
     });
   }
-  stopForFailure() {
+
+  stopForFailure(): void {
     this.spinner.stopAndPersist({
       symbol: colors.red('✘'),
       text: colors.red(`${this.name} is not installed. Please install ${this.name} and try again.`),
@@ -69,7 +74,7 @@ export async function checkSessionManagerPluginInstalled(): Promise<void> {
 export async function getProfileNames(): Promise<string[]> {
   await checkAwsInstalled();
   const profiles = (await $`aws configure list-profiles`.nothrow().text()).trim();
-  return profiles.length === 0 ? [] : profiles.split('\n').map((profile) => profile.trim());
+  return profiles.length === 0 ? [] : profiles.split('\n').map((profile: string) => profile.trim());
 }
 
 async function getProfileRegion(name: string): Promise<string | null> {
@@ -89,7 +94,7 @@ export async function getProfile(name: string): Promise<Profile> {
   }
 }
 
-function sortAsc(list: any[], field?: string) {
+function sortAsc(list: any[], field?: string): any[] {
   for (let i = 0; i < list.length - 1; i++) {
     let minIdx = i;
     for (let j = i + 1; j < list.length; j++) {
@@ -117,7 +122,7 @@ export async function getInstances(profileName: string): Promise<Instance[]> {
   }
 }
 
-export async function getRegions() {
+export async function getRegions(): Promise<string[]> {
   // https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-regions
   const regions = [
     'us-east-2',

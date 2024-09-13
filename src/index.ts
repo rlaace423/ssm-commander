@@ -1,10 +1,10 @@
 import { Command as CommanderCommand } from 'commander';
 import { search, select, confirm } from '@inquirer/prompts';
-import { CommandType, ConfigFileCommand, type CreateUserInput, type Instance } from './interface.ts';
+import { CommandType, type ConfigFileCommand, type CreateUserInput, type Instance } from './interface';
 import * as packageJson from '../package.json';
-import { getInstances, getProfile, getProfileNames, getRegions } from './aws.ts';
-import { prompt as TableSearch } from './table-search.ts';
-import DescriptionInput from './description-input.ts';
+import { getInstances, getProfile, getProfileNames, getRegions } from './aws';
+import { prompt as TableSearch } from './table-search';
+import DescriptionInput from './description-input';
 import {
   saveCommand,
   commandNameExists,
@@ -13,8 +13,8 @@ import {
   printConfigFileCommand,
   deleteCommand,
   runCommand,
-} from './config.ts';
-import { createTable } from './table.ts';
+} from './config';
+import { createTable } from './table';
 
 const program = new CommanderCommand();
 program.name(packageJson.name).description(packageJson.description).version(packageJson.version);
@@ -48,7 +48,12 @@ program
     'Specify AWS region to use. If provided, interactive prompt for the region will be skipped. (It will overrides region set in the profile.)',
   )
   .action(async (options) => {
-    const data = {} as CreateUserInput;
+    const data: CreateUserInput = {
+      commandType: undefined,
+      instance: undefined,
+      name: undefined,
+      profile: undefined,
+    };
 
     const profiles = await getProfileNames();
     const regions = await getRegions();
@@ -59,17 +64,17 @@ program
     }
 
     if (options.profile) {
-      if (!profiles.includes(options.profile)) {
+      if (!profiles.includes(options.profile as string)) {
         console.error(`Profile "${options.profile}" not found.`);
         process.exit(1);
       }
-      data.profile = await getProfile(options.profile);
+      data.profile = await getProfile(options.profile as string);
     } else {
       const profileName = await select({
         message: 'Select an AWS CLI profile',
         choices: profiles.map((profile) => ({ value: profile })),
       });
-      data.profile = await getProfile(profileName as string);
+      data.profile = await getProfile(profileName);
     }
 
     if (options.region) {
@@ -87,7 +92,7 @@ program
           return regions.filter((region) => region.includes(input ?? '')).map((region) => ({ value: region }));
         },
       });
-      data.profile.Region = region as string;
+      data.profile.Region = region;
     }
 
     data.commandType = (await select<CommandType>({
@@ -240,4 +245,6 @@ program
     await runCommand(command);
   });
 
-await program.parseAsync();
+(async () => {
+  await program.parseAsync();
+})();

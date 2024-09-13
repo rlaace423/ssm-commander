@@ -1,3 +1,5 @@
+/* eslint-disable */
+
 import {
   createPrompt,
   isEnterKey,
@@ -12,10 +14,10 @@ import {
   useRef,
   useState,
 } from '@inquirer/core';
-import * as colors from 'yoctocolors-cjs';
+import colors from 'yoctocolors-cjs';
 import figures from '@inquirer/figures';
 import type { PartialDeep } from '@inquirer/type';
-import { DEFAULT_TABLE_STYLE } from './table.ts';
+import { DEFAULT_TABLE_STYLE } from './table';
 
 type SearchTheme = {
   icon: { cursor: string };

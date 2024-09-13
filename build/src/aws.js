@@ -10,8 +10,8 @@ exports.getProfileNames = getProfileNames;
 exports.getProfile = getProfile;
 exports.getInstances = getInstances;
 exports.getRegions = getRegions;
-const bun_1 = require("bun");
 const yoctocolors_cjs_1 = __importDefault(require("yoctocolors-cjs"));
+const node_child_process_1 = require("node:child_process");
 exports.BINARY_INSTALLED = {
     aws: false,
     sessionManagerPlugin: false,
@@ -45,14 +45,14 @@ async function checkAwsInstalled() {
         return;
     }
     const spinner = new InstallationSpinner('AWS CLI').start();
-    const { exitCode } = await (0, bun_1.$) `aws --version`.nothrow().quiet();
-    if (exitCode !== 0) {
-        spinner.stopForFailure();
-        process.exit(1);
-    }
-    else {
+    try {
+        (0, node_child_process_1.execSync)('aws --version', { encoding: 'utf-8' });
         exports.BINARY_INSTALLED.aws = true;
         spinner.stopForSuccess();
+    }
+    catch (e) {
+        spinner.stopForFailure();
+        process.exit(1);
     }
 }
 async function checkSessionManagerPluginInstalled() {
@@ -60,30 +60,42 @@ async function checkSessionManagerPluginInstalled() {
         return;
     }
     const spinner = new InstallationSpinner('session-manager-plugin').start();
-    const { exitCode } = await (0, bun_1.$) `session-manager-plugin`.nothrow().quiet();
-    if (exitCode !== 0) {
-        spinner.stopForFailure();
-        process.exit(1);
-    }
-    else {
+    try {
+        (0, node_child_process_1.execSync)('session-manager-plugin', { encoding: 'utf-8' });
         exports.BINARY_INSTALLED.sessionManagerPlugin = true;
         spinner.stopForSuccess();
+    }
+    catch (e) {
+        spinner.stopForFailure();
+        process.exit(1);
     }
 }
 async function getProfileNames() {
     await checkAwsInstalled();
-    const profiles = (await (0, bun_1.$) `aws configure list-profiles`.nothrow().text()).trim();
+    let profiles;
+    try {
+        profiles = (0, node_child_process_1.execSync)('aws configure list-profiles', { encoding: 'utf-8' }).trim();
+    }
+    catch (e) {
+        return [];
+    }
     return profiles.length === 0 ? [] : profiles.split('\n').map((profile) => profile.trim());
 }
 async function getProfileRegion(name) {
     await checkAwsInstalled();
-    const region = (await (0, bun_1.$) `aws configure get region --profile ${name}`.nothrow().text()).trim();
+    let region;
+    try {
+        region = (0, node_child_process_1.execSync)(`aws configure get region --profile ${name}`, { encoding: 'utf-8' }).trim();
+    }
+    catch (e) {
+        return null;
+    }
     return region.length === 0 ? null : region;
 }
 async function getProfile(name) {
     try {
         await checkAwsInstalled();
-        const profile = await (0, bun_1.$) `aws configure export-credentials --format process --profile ${name}`.json();
+        const profile = JSON.parse((0, node_child_process_1.execSync)(`aws configure export-credentials --format process --profile ${name}`, { encoding: 'utf-8' }).trim());
         return { ...profile, Name: name, Region: await getProfileRegion(name) };
     }
     catch (e) {
@@ -110,11 +122,11 @@ function sortAsc(list, field) {
 async function getInstances(profileName) {
     try {
         await checkAwsInstalled();
-        const instances = await (0, bun_1.$) `aws ec2 describe-instances --query "Reservations[].Instances[].{InstanceId: InstanceId, InstanceType: InstanceType, PrivateIpAddress: PrivateIpAddress, PublicIpAddress: PublicIpAddress, State: State.Name, Name: Tags[?Key=='Name'].Value | [0]}" --output json --no-cli-pager --profile ${profileName}`.json();
+        const instances = JSON.parse((0, node_child_process_1.execSync)(`aws ec2 describe-instances --query "Reservations[].Instances[].{InstanceId: InstanceId, InstanceType: InstanceType, PrivateIpAddress: PrivateIpAddress, PublicIpAddress: PublicIpAddress, State: State.Name, Name: Tags[?Key=='Name'].Value | [0]}" --output json --no-cli-pager --profile ${profileName}`, { encoding: 'utf-8' }).trim());
         return sortAsc(instances, 'Name');
     }
     catch (e) {
-        throw new Error(e.stderr.toString().trim());
+        throw new Error(e.stderr.toString());
     }
 }
 async function getRegions() {

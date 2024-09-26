@@ -4,7 +4,7 @@ import path from 'path';
 (async () => {
   await build({
     bundle: true,
-    entryPoints: [path.join(path.resolve(), 'build/index.js')],
+    entryPoints: [path.join(path.resolve(), 'build/src/index.js')],
     outfile: path.join(path.resolve(), 'dist/index.js'),
     logLevel: 'silent',
     sourcemap: false,

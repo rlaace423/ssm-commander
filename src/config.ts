@@ -1,6 +1,7 @@
 import os from 'node:os';
 import { execSync } from 'node:child_process';
-import { $, file, write } from 'bun';
+import * as fs from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import {
   type ConfigFile,
   type ConfigFileCommand,
@@ -11,36 +12,30 @@ import {
 } from './interface';
 import colors from 'yoctocolors-cjs';
 import { checkAwsInstalled, checkSessionManagerPluginInstalled } from './aws';
-import * as fs from 'node:fs';
 
 const CONFIG_DIRECTORY_PATH = `${os.homedir()}/.ssm-commander`;
 const CONFIG_FILE_PATH = `${CONFIG_DIRECTORY_PATH}/config.json`;
+const SCRIPT_DIRECTORY_PATH = `${CONFIG_DIRECTORY_PATH}/scripts`;
 // BUMP UP IF ConfigFile's structure changed
 const CONFIG_VERSION = '1.0';
 
-async function createConfigDirectory(): Promise<void> {
+function writeConfigFile(content: ConfigFile): void {
   fs.mkdirSync(CONFIG_DIRECTORY_PATH, { recursive: true });
+  fs.writeFileSync(CONFIG_FILE_PATH, JSON.stringify(content), { mode: 0o755 });
 }
 
-async function writeConfigFile(content: ConfigFile): Promise<void> {
-  await createConfigDirectory();
-  await write(CONFIG_FILE_PATH, JSON.stringify(content));
-}
-
-export async function readConfigFile(): Promise<ConfigFile> {
-  const configFile = file(CONFIG_FILE_PATH);
-
-  if (!(await configFile.exists())) {
+export function readConfigFile(): ConfigFile {
+  if (!fs.existsSync(CONFIG_DIRECTORY_PATH)) {
     const emptyConfigFile = { version: CONFIG_VERSION, commands: [] };
-    await writeConfigFile(emptyConfigFile);
+    writeConfigFile(emptyConfigFile);
     return emptyConfigFile;
   } else {
-    return await configFile.json();
+    return JSON.parse(fs.readFileSync(CONFIG_FILE_PATH, 'utf8'));
   }
 }
 
-export async function commandNameExists(commandName: string): Promise<boolean> {
-  const configFile = await readConfigFile();
+export function commandNameExists(commandName: string): boolean {
+  const configFile = readConfigFile();
   return !!configFile.commands.find((command) => command.name === commandName);
 }
 
@@ -78,17 +73,17 @@ export function convertCreateUserInputToConfigFileCommand(data: CreateUserInput)
   return configFileCommand;
 }
 
-export async function saveCommand(command: ConfigFileCommand): Promise<void> {
-  const configFile = await readConfigFile();
+export function saveCommand(command: ConfigFileCommand): void {
+  const configFile = readConfigFile();
 
   configFile.commands.push(command);
-  await writeConfigFile(configFile);
+  writeConfigFile(configFile);
 }
 
-export async function deleteCommand(target: ConfigFileCommand): Promise<void> {
-  const configFile = await readConfigFile();
+export function deleteCommand(target: ConfigFileCommand): void {
+  const configFile = readConfigFile();
   configFile.commands = configFile.commands.filter((command) => command.name !== target.name);
-  await writeConfigFile(configFile);
+  writeConfigFile(configFile);
 }
 
 export function buildActualCommand(configFileCommand: ConfigFileCommand): string {
@@ -104,30 +99,33 @@ export function buildActualCommand(configFileCommand: ConfigFileCommand): string
   }
 }
 
+function createScriptFile(actualCommand: string): string {
+  const fileName = os.type() === 'Windows_NT' ? `${randomUUID()}.bat` : `${randomUUID()}.sh`;
+  const scriptHeader = os.type() === 'Windows_NT' ? '@echo off\n' : '#!/bin/sh\n';
+
+  fs.mkdirSync(SCRIPT_DIRECTORY_PATH, { recursive: true });
+  fs.writeFileSync(`${SCRIPT_DIRECTORY_PATH}/${fileName}`, `${scriptHeader}${actualCommand}`, { mode: 0o755 });
+  return `${SCRIPT_DIRECTORY_PATH}/${fileName}`;
+}
+
 export async function runCommand(command: ConfigFileCommand): Promise<void> {
   await checkAwsInstalled();
   await checkSessionManagerPluginInstalled();
 
   const actualCommand = buildActualCommand(command);
+  const scriptFilePath = createScriptFile(actualCommand);
   console.log(colors.cyan(`\nRunning SSM Command "${command.name}"`));
   console.log(colors.cyan(`${actualCommand}\n`));
 
-  if (os.type() === 'Windows_NT') {
-    await $`powershell -Command ${actualCommand}`;
-  } else {
-    // await $`sh -c ${actualCommand}`;
-    process.on('SIGINT', () => {
-      console.log('SIGINT (Ctrl+C) received, forwarding to child process.');
-    });
+  process.on('SIGINT', () => {
+    console.log('SIGINT (Ctrl+C) received, forwarding to child process.');
+  });
 
-    process.stdin.setRawMode(true);
-    process.stdin.resume();
-    process.stdin.setEncoding('utf-8');
-    execSync('~/.ssm-commander/test.sh', { stdio: 'inherit' });
-    process.stdin.setRawMode(false);
-    process.stdin.pause();
-    process.exit();
-  }
-
+  process.stdin.setRawMode(true);
+  process.stdin.resume();
+  process.stdin.setEncoding('utf-8');
+  execSync(scriptFilePath, { stdio: 'inherit' });
+  process.stdin.pause();
+  process.stdin.setRawMode(false);
   process.exit(0);
 }

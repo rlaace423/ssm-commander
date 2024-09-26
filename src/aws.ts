@@ -1,4 +1,4 @@
-import { Ora } from 'ora';
+import ora, { Ora } from 'ora';
 import colors from 'yoctocolors-cjs';
 import type { Instance, Profile } from './interface.ts';
 import { execSync } from 'node:child_process';
@@ -16,7 +16,7 @@ class InstallationSpinner {
     this.name = name;
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-expect-error
-    this.spinner = new Ora({ text: colors.cyan(`Checking if ${this.name} installed..`), color: 'cyan' });
+    this.spinner = new ora({ text: colors.cyan(`Checking if ${this.name} installed..`), color: 'cyan' });
   }
 
   start(): this {

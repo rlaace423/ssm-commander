@@ -19,4 +19,19 @@ describe('createProgram', () => {
     expect(flags).toEqual(expect.arrayContaining(['--profile', '--region', '--connectable']));
     expect(program.options.map((o) => o.long)).toContain('--debug');
   });
+
+  test('registers forward with preset management options', () => {
+    const forward = createProgram().commands.find((c) => c.name() === 'forward');
+    expect(forward?.options.map((o) => o.long)).toEqual(
+      expect.arrayContaining([
+        '--target',
+        '--remote-host',
+        '--remote-port',
+        '--local-port',
+        '--save',
+        '--list',
+        '--delete',
+      ]),
+    );
+  });
 });

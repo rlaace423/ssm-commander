@@ -88,7 +88,9 @@ describe('runForward', () => {
     expect(deps.listInstances).not.toHaveBeenCalled();
     expect(deps.descriptionInput).not.toHaveBeenCalled();
     expect(deps.runSession).toHaveBeenCalledWith(ctx, buildForwardSessionInput('i-1', 'localhost', 22, 3333));
-    expect(deps.info).toHaveBeenCalledWith('Forwarding localhost:3333 -> localhost:22 via web (i-1). Press Ctrl+C to stop.');
+    expect(deps.info).toHaveBeenCalledWith(
+      'Forwarding localhost:3333 -> localhost:22 via web (i-1). Press Ctrl+C to stop.',
+    );
   });
 
   test('errors for an unknown preset name', async () => {
@@ -129,7 +131,11 @@ describe('runForward', () => {
 
   test('--save persists the preset before starting the session, asking before overwriting', async () => {
     const fresh = makeDeps();
-    await runForward(undefined, { target: 'web', remoteHost: 'localhost', remotePort: '22', localPort: '2222', save: 'web-ssh' }, fresh);
+    await runForward(
+      undefined,
+      { target: 'web', remoteHost: 'localhost', remotePort: '22', localPort: '2222', save: 'web-ssh' },
+      fresh,
+    );
     const [dir, file] = (fresh.savePresets as ReturnType<typeof vi.fn>).mock.calls[0] as [string, PresetsFile];
     expect(dir).toBe('/tmp/ssm-commander-test');
     expect(file.presets).toEqual([preset]);
@@ -139,7 +145,11 @@ describe('runForward', () => {
     );
 
     const existing = makeDeps({ confirmOverwrite: vi.fn(async () => false) }, upsertPreset(emptyPresets(), preset));
-    await runForward(undefined, { target: 'web', remoteHost: 'localhost', remotePort: '22', localPort: '3333', save: 'web-ssh' }, existing);
+    await runForward(
+      undefined,
+      { target: 'web', remoteHost: 'localhost', remotePort: '22', localPort: '3333', save: 'web-ssh' },
+      existing,
+    );
     expect(existing.confirmOverwrite).toHaveBeenCalledWith('web-ssh');
     expect(existing.savePresets).not.toHaveBeenCalled();
     expect(existing.runSession).toHaveBeenCalled();
@@ -169,8 +179,8 @@ describe('runForward', () => {
 
   test('refuses a non-connectable target', async () => {
     const deps = makeDeps();
-    await expect(runForward(undefined, { target: 'db', remoteHost: 'localhost', remotePort: '22', localPort: '2222' }, deps)).rejects.toThrow(
-      'Instance i-2 (db) cannot be connected: stopped',
-    );
+    await expect(
+      runForward(undefined, { target: 'db', remoteHost: 'localhost', remotePort: '22', localPort: '2222' }, deps),
+    ).rejects.toThrow('Instance i-2 (db) cannot be connected: stopped');
   });
 });

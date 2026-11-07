@@ -3,6 +3,7 @@ import { pathToFileURL } from 'node:url';
 import { Command, CommanderError } from 'commander';
 import pkg from '../package.json' with { type: 'json' };
 import { runConnect } from './commands/connect.js';
+import { type ForwardOptions, runForward } from './commands/forward.js';
 import { CliError, formatError } from './errors.js';
 
 let lastExitCode = 0;
@@ -25,6 +26,24 @@ export function createProgram(): Command {
     .option('--connectable', 'list only instances that can be connected right now')
     .action(async (target: string | undefined, opts: { profile?: string; region?: string; connectable?: boolean }) => {
       lastExitCode = await runConnect(target, opts);
+    });
+
+  program
+    .command('forward')
+    .description('Forward a local port to a service reachable from an EC2 instance')
+    .argument('[preset]', 'name of a saved preset to run')
+    .option('-p, --profile <profile>', 'AWS profile (defaults to AWS_PROFILE, then a prompt)')
+    .option('-r, --region <region>', 'AWS region (defaults to the profile region, then a prompt)')
+    .option('--target <target>', 'instance id or Name tag; omit to pick from a list')
+    .option('--remote-host <host>', 'host to reach from the instance ("localhost" means the instance itself)')
+    .option('--remote-port <port>', 'port of the service on the remote host')
+    .option('--local-port <port>', 'local port to listen on')
+    .option('--save <name>', 'save these settings as a preset before connecting')
+    .option('--list', 'list saved presets')
+    .option('--delete <name>', 'delete a saved preset')
+    .option('--connectable', 'list only instances that can be connected right now')
+    .action(async (preset: string | undefined, opts: ForwardOptions) => {
+      lastExitCode = await runForward(preset, opts);
     });
 
   return program;

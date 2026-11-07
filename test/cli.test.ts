@@ -9,4 +9,14 @@ describe('createProgram', () => {
     expect(program.name()).toBe('ssm-commander');
     expect(program.version()).toBe(pkg.version);
   });
+
+  test('registers connect as the default command with its options', () => {
+    const program = createProgram();
+    const connect = program.commands.find((c) => c.name() === 'connect');
+    expect(connect).toBeDefined();
+    expect((program as unknown as { _defaultCommandName?: string })._defaultCommandName).toBe('connect');
+    const flags = connect?.options.map((o) => o.long);
+    expect(flags).toEqual(expect.arrayContaining(['--profile', '--region', '--connectable']));
+    expect(program.options.map((o) => o.long)).toContain('--debug');
+  });
 });

@@ -115,7 +115,10 @@ When the session ends, `TerminateSession` is called as a safety net.
 - Both are created with mode 0600 and never contain credentials or tokens.
 - `SSM_COMMANDER_HOME`: use another directory for the files above.
 - `SSM_COMMANDER_PLUGIN_PATH`: explicit path to session-manager-plugin.
-- `SSM_COMMANDER_DEBUG=1` (or `--debug`): print stack traces for unexpected errors.
+- `SSM_COMMANDER_DEBUG=1`: print stack traces for unexpected errors. The equivalent `--debug` flag goes before the
+  command, as in `ssm-commander --debug connect web-1`.
+- Upgrading from 0.1: the old saved-command file `~/.ssm-commander/config.json` is no longer read. It is left
+  untouched and can be deleted.
 
 ## Platform support
 

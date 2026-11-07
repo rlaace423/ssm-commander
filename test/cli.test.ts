@@ -1,6 +1,9 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, test } from 'vitest';
-import { createProgram } from '../src/cli.js';
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, test, vi } from 'vitest';
+import { createProgram, main } from '../src/cli.js';
 
 describe('createProgram', () => {
   test('uses package name and version', () => {
@@ -57,5 +60,31 @@ describe('createProgram', () => {
         '--delete',
       ]),
     );
+  });
+});
+
+describe('main', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  test('--version prints the version and exits 0', async () => {
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+    const out = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    expect(await main(['node', 'cli', '--version'])).toBe(0);
+    expect(out.mock.calls.map((c) => String(c[0])).join('')).toContain(pkg.version);
+  });
+
+  test("an unknown option exits 1 with commander's message on stderr", async () => {
+    const err = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    expect(await main(['node', 'cli', '--nope'])).toBe(1);
+    expect(err.mock.calls.map((c) => String(c[0])).join('')).toContain("unknown option '--nope'");
+  });
+
+  test('a CliError is printed with its hint and its exit code is returned', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'ssmc-'));
+    vi.stubEnv('SSM_COMMANDER_HOME', home);
+    const err = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    expect(await main(['node', 'cli', 'forward', '--delete', 'nope'])).toBe(1);
+    expect(err.mock.calls.map((c) => String(c[0])).join('')).toContain('Preset "nope" was not found');
+    vi.unstubAllEnvs();
   });
 });

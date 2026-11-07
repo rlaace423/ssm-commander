@@ -4,8 +4,8 @@ import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import {
   emptyPresets,
-  findPreset,
   type ForwardPreset,
+  findPreset,
   loadPresets,
   removePreset,
   savePresets,

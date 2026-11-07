@@ -1,7 +1,8 @@
-import { execFile, spawn } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { PluginNotFoundError } from '../errors.js';
 import type { SessionStart, StartSessionInput } from '../types.js';
+import { type SpawnInheritedDeps, spawnInherited } from './spawn-inherited.js';
 
 export const PLUGIN_ENV_VAR = 'AWS_SSM_START_SESSION_RESPONSE';
 /** Plugins newer than this accept the session response through the environment variable. */
@@ -88,56 +89,20 @@ export function buildPluginInvocation(input: {
   };
 }
 
-export const IGNORED_SIGNALS_POSIX: NodeJS.Signals[] = ['SIGINT', 'SIGQUIT', 'SIGTSTP'];
-export const IGNORED_SIGNALS_WIN32: NodeJS.Signals[] = ['SIGINT'];
-/** Termination requests aimed at us are passed on to the plugin so it never outlives us. */
-const FORWARDED_SIGNALS_POSIX: NodeJS.Signals[] = ['SIGTERM', 'SIGHUP'];
+export { IGNORED_SIGNALS_POSIX, IGNORED_SIGNALS_WIN32 } from './spawn-inherited.js';
 
-export interface RunPluginDeps {
-  spawn?: typeof spawn;
-  platform?: NodeJS.Platform;
-  proc?: Pick<NodeJS.Process, 'on' | 'off' | 'exit'>;
-}
+export type RunPluginDeps = SpawnInheritedDeps;
 
-/**
- * Hands the terminal to session-manager-plugin. The parent ignores the keyboard signals so
- * Ctrl+C reaches only the plugin (which forwards it to the remote shell), exactly like the AWS CLI.
- */
+/** Hands the terminal to session-manager-plugin; a missing plugin becomes PluginNotFoundError. */
 export async function runPlugin(
   pluginPath: string,
   invocation: PluginInvocation,
   deps: RunPluginDeps = {},
 ): Promise<number> {
-  const spawnFn = deps.spawn ?? spawn;
-  const platform = deps.platform ?? process.platform;
-  const proc = deps.proc ?? process;
-  const ignored = platform === 'win32' ? IGNORED_SIGNALS_WIN32 : IGNORED_SIGNALS_POSIX;
-  const forwarded = platform === 'win32' ? [] : FORWARDED_SIGNALS_POSIX;
-
-  return new Promise<number>((resolve, reject) => {
-    const child = spawnFn(pluginPath, invocation.args, { stdio: 'inherit', env: invocation.env });
-    const ignore = () => {};
-    const forwarders = forwarded.map((signal) => {
-      const handler = () => {
-        child.kill(signal);
-        proc.exit(1);
-      };
-      return [signal, handler] as const;
-    });
-    for (const signal of ignored) proc.on(signal, ignore);
-    for (const [signal, handler] of forwarders) proc.on(signal, handler);
-
-    let settled = false;
-    const finish = (fn: () => void) => {
-      if (settled) return;
-      settled = true;
-      for (const signal of ignored) proc.off(signal, ignore);
-      for (const [signal, handler] of forwarders) proc.off(signal, handler);
-      fn();
-    };
-    child.once('error', (err: NodeJS.ErrnoException) =>
-      finish(() => reject(err.code === 'ENOENT' ? new PluginNotFoundError() : err)),
-    );
-    child.once('exit', (code) => finish(() => resolve(code ?? 1)));
-  });
+  try {
+    return await spawnInherited(pluginPath, invocation.args, invocation.env, deps);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') throw new PluginNotFoundError();
+    throw err;
+  }
 }

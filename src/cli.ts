@@ -1,9 +1,12 @@
 import { realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { Command, CommanderError } from 'commander';
+import { Command, CommanderError, InvalidArgumentError } from 'commander';
 import pkg from '../package.json' with { type: 'json' };
 import { runConnect } from './commands/connect.js';
-import { type ForwardOptions, runForward } from './commands/forward.js';
+import { type ForwardOptions, runForward, validatePort } from './commands/forward.js';
+import { type ProxyOptions, runProxy } from './commands/proxy.js';
+import { runScp } from './commands/scp.js';
+import { runSsh, type SshOptions } from './commands/ssh.js';
 import { CliError, formatError } from './errors.js';
 
 let lastExitCode = 0;
@@ -44,6 +47,55 @@ export function createProgram(): Command {
     .option('--connectable', 'list only instances that can be connected right now')
     .action(async (preset: string | undefined, opts: ForwardOptions) => {
       lastExitCode = await runForward(preset, opts);
+    });
+
+  const portOption = (value: string): number => {
+    const valid = validatePort(value);
+    if (valid !== true) throw new InvalidArgumentError(valid);
+    return Number(value);
+  };
+  const passThroughNote =
+    'Options of ssm-commander must come before the target; everything else is passed through unchanged. ' +
+    'Requires an SSH server and your public key on the instance.';
+
+  const addSshOptions = (command: Command) =>
+    command
+      .passThroughOptions()
+      .allowUnknownOption()
+      .option('--profile <profile>', 'AWS profile (defaults to AWS_PROFILE, then a prompt)')
+      .option('--region <region>', 'AWS region (defaults to the profile region, then a prompt)')
+      .option('--user <user>', 'SSH user name (default: ec2-user)')
+      .option('--identity <file>', 'private key file, passed to ssh/scp as -i')
+      .option('--port <port>', 'SSH port on the instance (default: 22)', portOption)
+      .option('--connectable', 'list only instances that can be connected right now');
+
+  addSshOptions(
+    program
+      .command('ssh')
+      .description(`Open ssh to an EC2 instance through Session Manager. ${passThroughNote}`)
+      .argument('[args...]', 'target (instance id or Name tag) followed by ssh options and a remote command'),
+  ).action(async (args: string[], opts: SshOptions) => {
+    lastExitCode = await runSsh(args, opts);
+  });
+
+  addSshOptions(
+    program
+      .command('scp')
+      .description(`Copy files to or from an EC2 instance through Session Manager. ${passThroughNote}`)
+      .argument('[args...]', 'scp arguments; exactly one side is [user@]instance:path'),
+  ).action(async (args: string[], opts: SshOptions) => {
+    lastExitCode = await runScp(args, opts);
+  });
+
+  program
+    .command('proxy', { hidden: true })
+    .description('ProxyCommand helper used by the ssh and scp commands')
+    .requiredOption('--profile <profile>', 'AWS profile')
+    .requiredOption('--region <region>', 'AWS region')
+    .requiredOption('--target <target>', 'instance id')
+    .requiredOption('--port <port>', 'SSH port on the instance', portOption)
+    .action(async (opts: ProxyOptions) => {
+      lastExitCode = await runProxy(opts);
     });
 
   return program;

@@ -113,13 +113,17 @@ describe('buildPluginInvocation', () => {
     expect(inv.env.PATH).toBe('/bin');
   });
 
-  test('passes the session JSON as args[0] when version is 1.2.497.0 or null', () => {
-    for (const pluginVersion of ['1.2.497.0', null]) {
-      const inv = buildPluginInvocation({ ...base, pluginVersion });
-      expect(inv.args[0]).toBe(JSON.stringify(session));
-      expect(inv.env[PLUGIN_ENV_VAR]).toBeUndefined();
-      expect(inv.env.PATH).toBe('/bin');
-    }
+  test('passes the session JSON as args[0] only for plugins at or below 1.2.497.0', () => {
+    const inv = buildPluginInvocation({ ...base, pluginVersion: '1.2.497.0' });
+    expect(inv.args[0]).toBe(JSON.stringify(session));
+    expect(inv.env[PLUGIN_ENV_VAR]).toBeUndefined();
+    expect(inv.env.PATH).toBe('/bin');
+  });
+
+  test('uses the env var when the plugin version is unknown, so the token never reaches argv by default', () => {
+    const inv = buildPluginInvocation({ ...base, pluginVersion: null });
+    expect(inv.args[0]).toBe(PLUGIN_ENV_VAR);
+    expect(inv.env[PLUGIN_ENV_VAR]).toBe(JSON.stringify(session));
   });
 
   test('keeps a profile name with spaces as a single argv element and serialises all parameters', () => {

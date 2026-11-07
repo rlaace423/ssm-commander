@@ -1,5 +1,5 @@
 import { resolveContext } from '../context.js';
-import { CliError } from '../errors.js';
+import { CliError, describeAwsError, IAM_ACTIONS } from '../errors.js';
 import { defaultRunSessionDeps, runSession } from '../session/run-session.js';
 import type { AwsContext, StartSessionInput } from '../types.js';
 
@@ -33,9 +33,13 @@ export async function runProxy(opts: ProxyOptions, deps: ProxyDeps = defaultProx
     throw new CliError('proxy needs --profile, --region and --target');
   }
   const ctx = await deps.resolveContext({ profile: opts.profile, region: opts.region });
-  return deps.runSession(ctx, {
-    Target: opts.target,
-    DocumentName: SSH_DOCUMENT,
-    Parameters: { portNumber: [String(opts.port ?? 22)] },
-  });
+  try {
+    return await deps.runSession(ctx, {
+      Target: opts.target,
+      DocumentName: SSH_DOCUMENT,
+      Parameters: { portNumber: [String(opts.port ?? 22)] },
+    });
+  } catch (err) {
+    throw describeAwsError(err, { profile: ctx.profile, action: IAM_ACTIONS.ssmStart });
+  }
 }

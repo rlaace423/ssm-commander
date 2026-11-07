@@ -23,6 +23,7 @@ export interface ContextDeps {
     profile: string,
     mfaCodeProvider: (serial: string) => Promise<string>,
   ) => AwsCredentialIdentityProvider;
+  promptMfaCode: (serial: string) => Promise<string>;
 }
 
 export function defaultContextDeps(): ContextDeps {
@@ -34,6 +35,7 @@ export function defaultContextDeps(): ContextDeps {
     requireTty: () => requireTty(),
     env: process.env,
     credentialsFor,
+    promptMfaCode,
   };
 }
 
@@ -57,7 +59,10 @@ export async function resolveContext(
     profile = await deps.promptProfile(available);
   }
 
-  const credentials = deps.credentialsFor(profile, promptMfaCode);
+  const credentials = deps.credentialsFor(profile, async (serial) => {
+    deps.requireTty(); // an MFA prompt cannot be answered in proxy mode or behind a pipe
+    return deps.promptMfaCode(serial);
+  });
   let region = resolveRegion({ flag: opts.region, env: deps.env, profileRegion: profileRegion(files, profile) });
   if (region === undefined) {
     deps.requireTty();

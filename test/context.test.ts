@@ -18,6 +18,7 @@ function makeDeps(over: Partial<ContextDeps> = {}): ContextDeps {
     requireTty: vi.fn(),
     env: {},
     credentialsFor: vi.fn(() => provider),
+    promptMfaCode: vi.fn(async () => '123456'),
     ...over,
   };
 }
@@ -70,6 +71,27 @@ describe('resolveContext', () => {
     const deps = makeDeps({ loadSharedConfig: vi.fn(async () => ({ credentialsFile: {}, configFile: {} })) });
     await expect(resolveContext({}, deps)).rejects.toThrow(CliError);
     await expect(resolveContext({}, deps)).rejects.toThrow('No AWS profiles found');
+  });
+
+  test('the MFA code prompt handed to credentialsFor requires a TTY first', async () => {
+    const deps = makeDeps({
+      requireTty: () => {
+        throw new CliError('no tty');
+      },
+    });
+    await resolveContext({ profile: 'work' }, deps);
+    const mfa = (deps.credentialsFor as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as (
+      serial: string,
+    ) => Promise<string>;
+    await expect(mfa('arn:aws:iam::1:mfa/sam')).rejects.toThrow('no tty');
+    expect(deps.promptMfaCode).not.toHaveBeenCalled();
+    const ok = makeDeps();
+    await resolveContext({ profile: 'work' }, ok);
+    const mfaOk = (ok.credentialsFor as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as (
+      serial: string,
+    ) => Promise<string>;
+    expect(await mfaOk('arn:aws:iam::1:mfa/sam')).toBe('123456');
+    expect(ok.promptMfaCode).toHaveBeenCalledWith('arn:aws:iam::1:mfa/sam');
   });
 
   test('throws CliError from requireTty when a prompt is needed and stdin is not a TTY', async () => {

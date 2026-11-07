@@ -1,6 +1,6 @@
 import { fromIni } from '@aws-sdk/credential-providers';
 import { loadSharedConfigFiles } from '@smithy/core/config';
-import type { AwsCredentialIdentityProvider, SharedConfigFiles } from '@smithy/types';
+import type { AwsCredentialIdentity, AwsCredentialIdentityProvider, SharedConfigFiles } from '@smithy/types';
 import { CliError } from '../errors.js';
 
 const DEFAULT_PROFILE = 'default';
@@ -54,9 +54,45 @@ export function resolveRegion(input: {
   return input.flag || input.env.AWS_REGION || input.env.AWS_DEFAULT_REGION || input.profileRegion || undefined;
 }
 
+type MfaCodeProvider = (serial: string) => Promise<string>;
+type IniProviderFactory = (init: {
+  profile: string;
+  mfaCodeProvider: MfaCodeProvider;
+}) => AwsCredentialIdentityProvider;
+
+const EXPIRY_MARGIN_MS = 5 * 60_000;
+
+function expiringSoon(credentials: AwsCredentialIdentity): boolean {
+  return credentials.expiration !== undefined && credentials.expiration.getTime() - Date.now() < EXPIRY_MARGIN_MS;
+}
+
+/**
+ * Credentials for a profile, resolved once and shared by every client of a command run. Without this each
+ * SDK client resolves the profile on its own, which would prompt for an MFA code several times.
+ */
 export function credentialsFor(
   profile: string,
-  mfaCodeProvider: (serial: string) => Promise<string>,
+  mfaCodeProvider: MfaCodeProvider,
+  deps: { fromIni?: IniProviderFactory } = {},
 ): AwsCredentialIdentityProvider {
-  return fromIni({ profile, mfaCodeProvider });
+  const inner = (deps.fromIni ?? fromIni)({ profile, mfaCodeProvider });
+  let cached: Promise<AwsCredentialIdentity> | undefined;
+  return async (properties) => {
+    if (cached !== undefined) {
+      try {
+        const current = await cached;
+        if (!expiringSoon(current)) return current;
+      } catch {
+        // a failed resolution is retried below
+      }
+    }
+    const next = inner(properties);
+    cached = next;
+    try {
+      return await next;
+    } catch (err) {
+      if (cached === next) cached = undefined;
+      throw err;
+    }
+  };
 }

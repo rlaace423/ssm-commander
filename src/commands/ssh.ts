@@ -1,7 +1,15 @@
 import { spawn } from 'node:child_process';
 import { filterConnectable, listInstances } from '../aws/instances.js';
 import { resolveContext } from '../context.js';
-import { assertOwnOptionsFirst, buildProxyCommand, buildSshArgs, selfCommand } from '../passthrough.js';
+import { CliError } from '../errors.js';
+import {
+  assertOwnOptionsFirst,
+  buildProxyCommand,
+  buildSshArgs,
+  selfCommand,
+  splitSshRest,
+  splitUserAtTarget,
+} from '../passthrough.js';
 import { runExternal, type SpawnFn } from '../session/spawn-inherited.js';
 import { type HistoryFile, loadHistory, recentInstanceIds } from '../storage/history.js';
 import { configDir } from '../storage/paths.js';
@@ -71,11 +79,17 @@ export async function prepareTarget(
 }
 
 export async function runSsh(args: string[], opts: SshOptions, deps: SshDeps = defaultSshDeps()): Promise<number> {
-  const [target, ...rest] = args;
-  assertOwnOptionsFirst(rest);
+  const [first, ...rest] = args;
+  if (first?.startsWith('-')) {
+    throw new CliError('The target must come first: ssm-commander ssh [options] <target> [ssh options] [command]');
+  }
+  const { user: userAtTarget, target } = splitUserAtTarget(first);
+  // Only the ssh options before the remote command are checked; the remote command may use any flags it likes.
+  assertOwnOptionsFirst(splitSshRest(rest).options);
+
   const { row, proxyCommand } = await prepareTarget(target, opts, 'Select an instance to ssh into', deps);
   const sshArgs = buildSshArgs({
-    own: { user: opts.user, identity: opts.identity, port: opts.port },
+    own: { user: userAtTarget ?? opts.user, identity: opts.identity, port: opts.port },
     instanceId: row.instanceId,
     proxyCommand,
     rest,

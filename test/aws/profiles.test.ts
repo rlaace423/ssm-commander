@@ -1,6 +1,12 @@
 import type { SharedConfigFiles } from '@smithy/types';
-import { describe, expect, test } from 'vitest';
-import { listProfileNames, profileRegion, resolveProfileName, resolveRegion } from '../../src/aws/profiles.js';
+import { describe, expect, test, vi } from 'vitest';
+import {
+  credentialsFor,
+  listProfileNames,
+  profileRegion,
+  resolveProfileName,
+  resolveRegion,
+} from '../../src/aws/profiles.js';
 import { CliError } from '../../src/errors.js';
 
 const files: SharedConfigFiles = {
@@ -74,5 +80,45 @@ describe('resolveRegion', () => {
     );
     expect(resolveRegion({ env: {}, profileRegion: 'ap-northeast-2' })).toBe('ap-northeast-2');
     expect(resolveRegion({ env: {} })).toBeUndefined();
+  });
+});
+
+describe('credentialsFor', () => {
+  const creds = (expiration?: Date) => ({
+    accessKeyId: 'k',
+    secretAccessKey: 's',
+    ...(expiration ? { expiration } : {}),
+  });
+
+  test('resolves the profile once and shares the result across concurrent and later callers', async () => {
+    const inner = vi.fn(async () => creds());
+    const provider = credentialsFor('default', async () => '000000', { fromIni: () => inner });
+    const [a, b] = await Promise.all([provider(), provider()]);
+    const c = await provider();
+    expect(inner).toHaveBeenCalledTimes(1);
+    expect(a).toBe(b);
+    expect(c).toBe(a);
+  });
+
+  test('refreshes credentials that are about to expire and does not cache failures', async () => {
+    const soon = new Date(Date.now() + 60_000);
+    const inner = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('wrong mfa'))
+      .mockResolvedValueOnce(creds(soon))
+      .mockResolvedValueOnce(creds(new Date(Date.now() + 3_600_000)));
+    const provider = credentialsFor('default', async () => '000000', { fromIni: () => inner });
+    await expect(provider()).rejects.toThrow('wrong mfa');
+    await provider(); // expiring soon → next call re-resolves
+    await provider();
+    await provider(); // fresh for an hour → cached
+    expect(inner).toHaveBeenCalledTimes(3);
+  });
+
+  test('passes the profile and mfa provider to fromIni', () => {
+    const fromIni = vi.fn(() => async () => creds());
+    const mfa = async () => '1';
+    credentialsFor('work', mfa, { fromIni });
+    expect(fromIni).toHaveBeenCalledWith({ profile: 'work', mfaCodeProvider: mfa });
   });
 });

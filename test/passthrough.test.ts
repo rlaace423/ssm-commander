@@ -8,10 +8,11 @@ import {
   findScpRemoteOperand,
   selfCommand,
   splitSshRest,
+  splitUserAtTarget,
 } from '../src/passthrough.js';
 
 const proxy =
-  '"/usr/local/bin/node" "/opt/s c/cli.mjs" proxy --profile default --region ap-northeast-2 --target i-1 --port 22';
+  "'/usr/local/bin/node' '/opt/s c/cli.mjs' proxy --profile 'default' --region 'ap-northeast-2' --target 'i-1' --port '22'";
 
 describe('selfCommand / buildProxyCommand', () => {
   test('selfCommand is the running node binary plus the entry script', () => {
@@ -20,7 +21,7 @@ describe('selfCommand / buildProxyCommand', () => {
     ).toEqual(['/usr/local/bin/node', '/opt/cli.mjs']);
   });
 
-  test('buildProxyCommand quotes each element and names the proxy subcommand', () => {
+  test('buildProxyCommand single-quotes every element, escapes quotes and percent signs', () => {
     expect(
       buildProxyCommand(['/usr/local/bin/node', '/opt/s c/cli.mjs'], {
         profile: 'default',
@@ -29,6 +30,22 @@ describe('selfCommand / buildProxyCommand', () => {
         port: 22,
       }),
     ).toBe(proxy);
+    expect(
+      buildProxyCommand(['/node', "/opt/it's 100%/cli.mjs"], {
+        profile: 'my work',
+        region: 'eu-west-1',
+        instanceId: 'i-2',
+        port: 2222,
+      }),
+    ).toBe(
+      "'/node' '/opt/it'\\''s 100%%/cli.mjs' proxy --profile 'my work' --region 'eu-west-1' --target 'i-2' --port '2222'",
+    );
+  });
+
+  test('splitUserAtTarget separates an optional user@ prefix', () => {
+    expect(splitUserAtTarget('ubuntu@web-1')).toEqual({ user: 'ubuntu', target: 'web-1' });
+    expect(splitUserAtTarget('web-1')).toEqual({ user: null, target: 'web-1' });
+    expect(splitUserAtTarget(undefined)).toEqual({ user: null, target: undefined });
   });
 });
 
@@ -154,5 +171,13 @@ describe('assertOwnOptionsFirst', () => {
       'Option --user must come before the target; after it, arguments are passed to ssh/scp unchanged',
     );
     expect(() => assertOwnOptionsFirst(['-o', 'StrictHostKeyChecking=no', 'hostname', '--verbose'])).not.toThrow();
+  });
+
+  test('remote command tokens are not inspected when only the leading options are passed', async () => {
+    const { assertOwnOptionsFirst } = await import('../src/passthrough.js');
+    expect(() =>
+      assertOwnOptionsFirst(splitSshRest(['mysql', '--user', 'root', '--port', '3306']).options),
+    ).not.toThrow();
+    expect(() => assertOwnOptionsFirst(splitSshRest(['--user', 'ubuntu', 'hostname']).options)).toThrow(CliError);
   });
 });

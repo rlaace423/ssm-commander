@@ -70,10 +70,13 @@ ssm-commander scp --profile prod ./dump.sql ubuntu@web-1:/tmp/
 ssm-commander scp --profile prod -r ubuntu@web-1:/var/log/app ./logs
 ```
 
-ssm-commander's own options (`--profile`, `--region`, `--user`, `--identity`, `--port`, `--connectable`) must
-come **before** the target. Everything else is passed to `ssh`/`scp` unchanged, so `-r`, `-o ...`, port forwards
-and remote commands all work as usual. The default user is `ec2-user`; override it with `--user` or `user@`.
-Exactly one side of an `scp` transfer is `[user@]instance:path`, where `instance` is a Name tag or instance id.
+Argument order for `ssh`: ssm-commander's own options (`--profile`, `--region`, `--user`, `--identity`,
+`--port`, `--connectable`) first, then the target, then ssh's own options and the remote command, exactly as you
+would write them for `ssh` itself. Everything after the target is passed through unchanged, so `-o ...`, port
+forwards and remote commands with their own flags all work. The target may be written as `user@name`; the default
+user is `ec2-user`, `--user` overrides it, and `user@` overrides both. For `scp`, exactly one side of the transfer
+is `[user@]instance:path`, where `instance` is a Name tag or instance id, and `-r` and other scp flags pass
+through.
 
 Under the hood both commands run the system `ssh`/`scp` with a `ProxyCommand` that calls a hidden
 `ssm-commander proxy` subcommand, which opens an `AWS-StartSSHSession` through Session Manager. Host keys are
@@ -93,8 +96,9 @@ credentials work (STS GetCallerIdentity). Exit code 1 if anything fails.
 - Profile: `-p/--profile` → `AWS_PROFILE` → prompt (skipped when only one profile exists).
 - Region: `-r/--region` → `AWS_REGION` / `AWS_DEFAULT_REGION` → the profile's `region` → prompt.
 
-MFA-protected `assume-role` profiles prompt for the code. SSO profiles work while their token is valid; this tool
-does not run the SSO login itself.
+MFA-protected `assume-role` profiles prompt for the code in `connect`, `forward` and `doctor`; `ssh` and `scp`
+cannot prompt (the SSH data channel occupies stdin), so use them with profiles that need no MFA code. SSO profiles
+work while their token is valid; this tool does not run the SSO login itself.
 
 ## How it works
 
@@ -125,18 +129,18 @@ Run these against a profile and two instances you can reach (one Ubuntu, one Ama
 
 - [ ] `ssm-commander doctor -p <profile>` prints ✔ on every line.
 - [ ] `ssm-commander connect <name> -p <profile>` opens a shell; `echo ok` prints `ok`; `exit` ends the session
-      and the plugin prints `Exiting session with sessionId`.
+  and the plugin prints `Exiting session with sessionId`.
 - [ ] `ssm-commander connect -p <profile>` lists instances with State and SSM columns; the one you just used is
-      marked `*`; non-connectable rows are dimmed with a reason and cannot be selected.
+  marked `*`; non-connectable rows are dimmed with a reason and cannot be selected.
 - [ ] `ssm-commander connect <stopped-instance-name> -p <profile>` fails with `cannot be connected: stopped`.
 - [ ] `ssm-commander connect --connectable -p <profile>` hides the non-connectable rows.
 - [ ] `ssm-commander forward -p <profile> --target <name> --remote-host localhost --remote-port 22 --local-port 2222 --save t`
-      then, in another terminal, `ssh -p 2222 <user>@localhost hostname` prints the hostname; Ctrl+C stops the
-      forward; `ssm-commander forward t` starts again without prompts; `ssm-commander forward --list` shows `t`.
+  then, in another terminal, `ssh -p 2222 <user>@localhost hostname` prints the hostname; Ctrl+C stops the
+  forward; `ssm-commander forward t` starts again without prompts; `ssm-commander forward --list` shows `t`.
 - [ ] `ssm-commander ssh --profile <profile> --user ubuntu <ubuntu-name> hostname` prints the hostname, and
-      `ssm-commander ssh --profile <profile> <amazon-linux-name> whoami` prints `ec2-user`.
+  `ssm-commander ssh --profile <profile> <amazon-linux-name> whoami` prints `ec2-user`.
 - [ ] `ssm-commander scp --profile <profile> ./file user@<name>:/tmp/file` followed by the download in the other
-      direction gives an identical file; `-r` copies a directory.
+  direction gives an identical file; `-r` copies a directory.
 - [ ] Inside a session, Ctrl+C interrupts the remote command (try `sleep 30`) and ssm-commander keeps running.
 - [ ] After every session no `session-manager-plugin` process is left behind (`pgrep session-manager-plugin`).
 

@@ -27,7 +27,7 @@ const row = (over: Partial<InstanceRow>): InstanceRow => ({
 });
 const web = row({ instanceId: 'i-1', name: 'web' });
 const db = row({ instanceId: 'i-2', name: 'db', state: 'stopped', connectable: false, reason: 'stopped' });
-const proxy = '"/node" "/cli.mjs" proxy --profile default --region ap-northeast-2 --target i-1 --port 22';
+const proxy = "'/node' '/cli.mjs' proxy --profile 'default' --region 'ap-northeast-2' --target 'i-1' --port '22'";
 
 function fakeSpawn(outcome: { code?: number; errorCode?: string }) {
   return vi.fn(() => {
@@ -86,6 +86,33 @@ describe('runSsh', () => {
     await expect(runSsh(['db'], {}, makeDeps())).rejects.toThrow('Instance i-2 (db) cannot be connected: stopped');
   });
 
+  test('accepts user@target, which wins over --user', async () => {
+    const deps = makeDeps();
+    await runSsh(['ubuntu@web', 'hostname'], { user: 'ignored' }, deps);
+    expect(deps.spawn).toHaveBeenCalledWith(
+      'ssh',
+      ['-o', `ProxyCommand=${proxy}`, '-l', 'ubuntu', 'i-1', 'hostname'],
+      expect.anything(),
+    );
+  });
+
+  test('passes remote command flags such as --user through untouched', async () => {
+    const deps = makeDeps();
+    await runSsh(['web', 'mysql', '--user', 'root', '--port', '3306'], {}, deps);
+    const args = (deps.spawn as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as string[];
+    expect(args.slice(-5)).toEqual(['i-1', 'mysql', '--user', 'root', '--port', '3306'].slice(-5));
+    expect(args).toContain('i-1');
+  });
+
+  test('rejects ssh options placed before the target with a clear message', async () => {
+    const deps = makeDeps();
+    await expect(runSsh(['-i', 'key.pem', 'web', 'hostname'], {}, deps)).rejects.toThrow(
+      'The target must come first: ssm-commander ssh [options] <target> [ssh options] [command]',
+    );
+    expect(deps.resolveContext).not.toHaveBeenCalled();
+    expect(deps.spawn).not.toHaveBeenCalled();
+  });
+
   test('maps a missing ssh binary to a CliError', async () => {
     const deps = makeDeps({ spawn: fakeSpawn({ errorCode: 'ENOENT' }) as unknown as SshDeps['spawn'] });
     await expect(runSsh(['web'], {}, deps)).rejects.toThrow('ssh was not found on PATH');
@@ -127,6 +154,16 @@ describe('runProxy', () => {
       Parameters: { portNumber: ['2222'] },
     });
     expect(write).not.toHaveBeenCalled();
+  });
+
+  test('maps StartSession errors to the same CliError guidance as connect', async () => {
+    const denied = Object.assign(new Error('nope'), { name: 'AccessDeniedException' });
+    await expect(
+      runProxy(
+        { profile: 'default', region: 'ap-northeast-2', target: 'i-1', port: 22 },
+        { resolveContext: vi.fn(async () => ctx), runSession: vi.fn(async () => Promise.reject(denied)) },
+      ),
+    ).rejects.toThrow('Profile "default" is not allowed to perform ssm:StartSession');
   });
 
   test('requires profile, region and target', async () => {

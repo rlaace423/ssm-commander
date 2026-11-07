@@ -39,12 +39,35 @@ export function selfCommand(proc: { execPath: string; argv: string[] } = process
   return [proc.execPath, proc.argv[1] ?? ''];
 }
 
+/** POSIX single-quoting for ssh's ProxyCommand (run through the user's shell); `%` is doubled because ssh expands %-tokens. */
+export function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, "'\\''").replace(/%/g, '%%')}'`;
+}
+
 export function buildProxyCommand(
   self: string[],
   target: { profile: string; region: string; instanceId: string; port: number },
 ): string {
-  const quoted = self.map((part) => `"${part}"`).join(' ');
-  return `${quoted} proxy --profile ${target.profile} --region ${target.region} --target ${target.instanceId} --port ${target.port}`;
+  const parts = [
+    ...self,
+    'proxy',
+    '--profile',
+    target.profile,
+    '--region',
+    target.region,
+    '--target',
+    target.instanceId,
+    '--port',
+    String(target.port),
+  ];
+  return parts.map((part) => (part === 'proxy' || part.startsWith('--') ? part : shellQuote(part))).join(' ');
+}
+
+/** `user@target` → user and target; a bare target has no user. */
+export function splitUserAtTarget(target: string | undefined): { user: string | null; target: string | undefined } {
+  if (target === undefined) return { user: null, target: undefined };
+  const match = /^([^@]+)@(.+)$/.exec(target);
+  return match ? { user: match[1] as string, target: match[2] as string } : { user: null, target };
 }
 
 /** Leading option tokens (with their values) belong before the host; everything from the first non-option is the remote command. */

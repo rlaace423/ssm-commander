@@ -73,7 +73,8 @@ export function buildPluginInvocation(input: {
   baseEnv: NodeJS.ProcessEnv;
 }): PluginInvocation {
   const sessionJson = JSON.stringify(input.session);
-  const useEnvVar = input.pluginVersion !== null && compareVersions(input.pluginVersion, ENV_VAR_MIN_VERSION) > 0;
+  // Unknown version: assume a current plugin so the token stays out of the process list by default.
+  const useEnvVar = input.pluginVersion === null || compareVersions(input.pluginVersion, ENV_VAR_MIN_VERSION) > 0;
   const env: NodeJS.ProcessEnv = { ...input.baseEnv };
   if (useEnvVar) env[PLUGIN_ENV_VAR] = sessionJson;
   return {

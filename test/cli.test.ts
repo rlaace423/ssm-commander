@@ -4,8 +4,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { createProgram, main } from '../src/cli.js';
+import type { ConnectDeps } from '../src/commands/connect.js';
 
 describe('createProgram', () => {
+  test('hands injected deps to the command instead of the real wiring', async () => {
+    const resolveContext = vi.fn().mockRejectedValue(new Error('stop here'));
+    const connect = { resolveContext, requireTty: () => {} } as unknown as ConnectDeps;
+    const program = createProgram({ connect });
+    await expect(program.parseAsync(['node', 'cli', 'connect', 'web-1'])).rejects.toThrow('stop here');
+    expect(resolveContext).toHaveBeenCalledWith({ profile: undefined, region: undefined });
+  });
+
   test('uses package name and version', () => {
     const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
     const program = createProgram();

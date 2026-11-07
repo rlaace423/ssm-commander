@@ -1,19 +1,30 @@
-// Runs the real `connect` flow against a fictitious fleet so the README recording shows the whole
-// experience (profiles, the searchable table with its Note column, a session) without touching AWS.
-// Bundled by demo/build.mjs and driven by demo/record.exp; not part of the published package.
+// Runs the real commands against a fictitious fleet so the README recordings show the whole experience
+// (profiles, the searchable table with its Note column, sessions, presets) without touching AWS.
+// Bundled by demo/build.mjs, started through demo/run.mjs and driven by demo/record.exp.
+import { spawn } from 'node:child_process';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type Ec2Summary, mergeInstances, type SsmSummary, sortInstances } from '../src/aws/instances.js';
-import { type ConnectDeps, runConnect } from '../src/commands/connect.js';
+import { main } from '../src/cli.js';
+import type { ConnectDeps } from '../src/commands/connect.js';
+import { FORWARD_DOCUMENT, type ForwardDeps } from '../src/commands/forward.js';
+import type { SshDeps } from '../src/commands/ssh.js';
 import { spawnInherited } from '../src/session/spawn-inherited.js';
 import { emptyHistory, recordConnection } from '../src/storage/history.js';
+import { loadPresets, savePresets } from '../src/storage/presets.js';
+import type { AwsContext, StartSessionInput } from '../src/types.js';
+import { descriptionInput } from '../src/ui/description-input.js';
 import { pickInstance } from '../src/ui/instance-picker.js';
 import { info, spinner, warn } from '../src/ui/output.js';
-import { promptProfile, requireTty } from '../src/ui/prompts.js';
+import { confirmOverwrite, promptIo, promptProfile, requireTty } from '../src/ui/prompts.js';
 
 const REGION = 'ap-northeast-2';
 const PROFILES = ['default', 'staging', 'prod'];
 const FAKE_SESSION = join(dirname(fileURLToPath(import.meta.url)), '..', 'fake-session.mjs');
+// Presets saved during a recording live here, so a later command in the same recording can reuse them.
+const DEMO_HOME = process.env.DEMO_HOME ?? mkdtempSync(join(tmpdir(), 'ssm-commander-demo-'));
 
 // Public IPs come from the RFC 5737 documentation ranges, so they never point at a real host.
 const FLEET: Ec2Summary[] = [
@@ -91,41 +102,71 @@ const AGENTS: SsmSummary[] = [
 ];
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-let chosenProfile = PROFILES[0] ?? 'default';
+const privateIpOf = (instanceId: string) => FLEET.find((i) => i.instanceId === instanceId)?.privateIp ?? '10.0.0.1';
+const credentials = async () => ({ accessKeyId: 'demo', secretAccessKey: 'demo' });
+let chosenProfile = 'default';
 
-const deps: ConnectDeps = {
-  resolveContext: async () => {
-    requireTty();
-    chosenProfile = await promptProfile(PROFILES);
-    return {
-      profile: chosenProfile,
-      region: REGION,
-      credentials: async () => ({ accessKeyId: 'demo', secretAccessKey: 'demo' }),
-    };
-  },
-  listInstances: async (_ctx, opts) => {
-    await pause(700); // long enough for the spinner to be seen
-    return { rows: sortInstances(mergeInstances(FLEET, AGENTS), opts.recentIds), ssmUnavailable: false };
-  },
+async function resolveContext(opts: { profile?: string; region?: string }): Promise<AwsContext> {
+  if (opts.profile === undefined) requireTty();
+  chosenProfile = opts.profile ?? (await promptProfile(PROFILES));
+  return { profile: chosenProfile, region: opts.region ?? REGION, credentials };
+}
+
+async function listInstances(_ctx: AwsContext, opts: { recentIds: string[] }) {
+  await pause(700); // long enough for the spinner to be seen
+  return { rows: sortInstances(mergeInstances(FLEET, AGENTS), opts.recentIds), ssmUnavailable: false };
+}
+
+// api-1 was connected before, so it shows up first with the recent marker.
+const loadHistory = async () =>
+  recordConnection(
+    emptyHistory(),
+    { profile: chosenProfile, region: REGION, instanceId: 'i-0f3a9c1d2e4b5a601', instanceName: 'api-1' },
+    new Date(),
+  );
+
+// The fake session plays the plugin: an interactive shell, or a port forwarding that waits for Ctrl+C.
+function runSession(ctx: AwsContext, input: StartSessionInput): Promise<number> {
+  const args =
+    input.DocumentName === FORWARD_DOCUMENT
+      ? ['forward', ctx.profile, input.Parameters?.localPortNumber?.[0] ?? '0']
+      : ['connect', ctx.profile, privateIpOf(input.Target)];
+  return spawnInherited(process.execPath, [FAKE_SESSION, ...args], process.env);
+}
+
+const common = {
+  resolveContext,
+  listInstances,
   pickInstance,
-  runSession: (ctx, input) => {
-    const privateIp = FLEET.find((i) => i.instanceId === input.Target)?.privateIp ?? '10.0.0.1';
-    return spawnInherited(process.execPath, [FAKE_SESSION, ctx.profile, privateIp], process.env);
-  },
-  // api-1 was connected before, so it shows up first with the recent marker.
-  loadHistory: async () =>
-    recordConnection(
-      emptyHistory(),
-      { profile: chosenProfile, region: REGION, instanceId: 'i-0f3a9c1d2e4b5a601', instanceName: 'api-1' },
-      new Date(),
-    ),
-  saveHistory: async () => {},
-  configDir: '/nonexistent',
-  now: () => new Date(),
-  warn,
+  loadHistory,
+  configDir: DEMO_HOME,
   info,
   spinner,
   requireTty: () => requireTty(),
 };
 
-process.exitCode = await runConnect(undefined, {}, deps);
+const connect: ConnectDeps = { ...common, runSession, saveHistory: async () => {}, now: () => new Date(), warn };
+
+const forward: ForwardDeps = {
+  ...common,
+  runSession,
+  loadPresets,
+  savePresets,
+  descriptionInput: (config) => descriptionInput(config, promptIo),
+  confirmOverwrite,
+  writeStdout: (text) => {
+    process.stdout.write(text);
+  },
+};
+
+// The system ssh/scp are replaced by the fake session, which reads the user and target out of the arguments.
+const ssh: SshDeps = {
+  ...common,
+  selfCommand: () => ['ssm-commander'],
+  spawn: (command, args, options) => {
+    const instanceId = args.find((arg) => /^i-[0-9a-f]+/.test(arg)) ?? '';
+    return spawn(process.execPath, [FAKE_SESSION, command, privateIpOf(instanceId), ...args], options);
+  },
+};
+
+process.exitCode = await main(process.argv, { connect, forward, ssh, scp: ssh });

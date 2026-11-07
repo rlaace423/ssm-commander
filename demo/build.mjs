@@ -1,4 +1,4 @@
-// Bundles demo/harness.ts the same way esbuild.config.mjs bundles the CLI. The output is git-ignored.
+// Bundles demo/harness.ts the same way esbuild.config.mjs bundles the CLI; demo/run.mjs starts the output.
 import { build } from 'esbuild';
 
 await build({

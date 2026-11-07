@@ -2,17 +2,25 @@ import { realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { Command, CommanderError, InvalidArgumentError } from 'commander';
 import pkg from '../package.json' with { type: 'json' };
-import { runConnect } from './commands/connect.js';
+import { type ConnectDeps, runConnect } from './commands/connect.js';
 import { runDoctor } from './commands/doctor.js';
-import { type ForwardOptions, runForward, validatePort } from './commands/forward.js';
+import { type ForwardDeps, type ForwardOptions, runForward, validatePort } from './commands/forward.js';
 import { type ProxyOptions, runProxy } from './commands/proxy.js';
 import { runScp } from './commands/scp.js';
-import { runSsh, type SshOptions } from './commands/ssh.js';
+import { runSsh, type SshDeps, type SshOptions } from './commands/ssh.js';
 import { CliError, formatError } from './errors.js';
 
 let lastExitCode = 0;
 
-export function createProgram(): Command {
+/** Per-command dependency overrides (tests, the README demo); anything omitted uses the real AWS, prompt and plugin wiring. */
+export interface ProgramDeps {
+  connect?: ConnectDeps;
+  forward?: ForwardDeps;
+  ssh?: SshDeps;
+  scp?: SshDeps;
+}
+
+export function createProgram(deps: ProgramDeps = {}): Command {
   const program = new Command()
     .name('ssm-commander')
     .description(pkg.description)
@@ -29,7 +37,7 @@ export function createProgram(): Command {
     .option('-r, --region <region>', 'AWS region (defaults to the profile region, then a prompt)')
     .option('--connectable', 'list only instances that can be connected right now')
     .action(async (target: string | undefined, opts: { profile?: string; region?: string; connectable?: boolean }) => {
-      lastExitCode = await runConnect(target, opts);
+      lastExitCode = await runConnect(target, opts, deps.connect);
     });
 
   program
@@ -47,7 +55,7 @@ export function createProgram(): Command {
     .option('--delete <name>', 'delete a saved preset')
     .option('--connectable', 'list only instances that can be connected right now')
     .action(async (preset: string | undefined, opts: ForwardOptions) => {
-      lastExitCode = await runForward(preset, opts);
+      lastExitCode = await runForward(preset, opts, deps.forward);
     });
 
   const portOption = (value: string): number => {
@@ -76,7 +84,7 @@ export function createProgram(): Command {
       .description(`Open ssh to an EC2 instance through Session Manager. ${passThroughNote}`)
       .argument('[args...]', 'target (instance id or Name tag) followed by ssh options and a remote command'),
   ).action(async (args: string[], opts: SshOptions) => {
-    lastExitCode = await runSsh(args, opts);
+    lastExitCode = await runSsh(args, opts, deps.ssh);
   });
 
   addSshOptions(
@@ -85,7 +93,7 @@ export function createProgram(): Command {
       .description(`Copy files to or from an EC2 instance through Session Manager. ${passThroughNote}`)
       .argument('[args...]', 'scp arguments; exactly one side is [user@]instance:path'),
   ).action(async (args: string[], opts: SshOptions) => {
-    lastExitCode = await runScp(args, opts);
+    lastExitCode = await runScp(args, opts, deps.scp);
   });
 
   program
@@ -110,11 +118,11 @@ export function createProgram(): Command {
   return program;
 }
 
-export async function main(argv: string[]): Promise<number> {
+export async function main(argv: string[], deps: ProgramDeps = {}): Promise<number> {
   lastExitCode = 0;
   const debug = argv.includes('--debug') || process.env.SSM_COMMANDER_DEBUG === '1';
   try {
-    await createProgram().parseAsync(argv);
+    await createProgram(deps).parseAsync(argv);
     return lastExitCode;
   } catch (err) {
     if (err instanceof CommanderError) return err.exitCode; // help, version and usage errors are already printed

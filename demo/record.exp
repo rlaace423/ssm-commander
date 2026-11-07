@@ -1,38 +1,50 @@
 #!/usr/bin/expect -f
-# Drives the demo under asciinema with human-like pauses so the README recording is reproducible.
-# usage (from the repository root): expect demo/record.exp <output.cast> <demo bundle>
-set cast [lindex $argv 0]
-set demo [lindex $argv 1]
+# Drives one demo scenario under asciinema with human-like pauses so the README recordings are reproducible.
+# usage (from the repository root): expect demo/record.exp <connect|forward|ssh> <output.cast>
+set scenario [lindex $argv 0]
+set cast [lindex $argv 1]
 set timeout 30
-set stty_init "rows 20 columns 130"
+set stty_init "rows 22 columns 130"
 set send_human {.1 .2 1 .05 .25}
 log_user 0
 
-spawn asciinema rec --overwrite --quiet --window-size 130x20 --command "sh demo/shell.sh $demo" $cast
+proc record {cast lines} {
+    global spawn_id ;# spawn inside a proc would otherwise leave the main body talking to stdin
+    set cmd "sh demo/shell.sh"
+    foreach line $lines { append cmd " '$line'" }
+    spawn asciinema rec --overwrite --quiet --window-size 130x22 --command $cmd $cast
+}
+proc down {} { send "\033\[B" }
+proc prompt {} { expect -re {\$ $} }
 
-expect "Select an AWS profile"
-sleep 1.2
-send "\033\[B"
-sleep 0.5
-send "\033\[B"
-sleep 0.8
-send "\r"
-
-expect "Select an instance to connect"
-sleep 3.5
-send -h "api"
-sleep 1.5
-send "\033\[B"
-sleep 0.8
-send "\r"
-
-expect -re {sh-5\.2\$ $}
-sleep 1.0
-send -h "hostname\r"
-expect -re {sh-5\.2\$ $}
-sleep 1.0
-send -h "whoami\r"
-expect -re {sh-5\.2\$ $}
-sleep 1.5
-send -h "exit\r"
+switch $scenario {
+    connect {
+        record $cast {ssm-commander}
+        expect "Select an AWS profile"
+        sleep 1.2; down; sleep 0.5; down; sleep 0.8; send "\r"
+        expect "Select an instance to connect"
+        sleep 3.5; send -h "api"; sleep 1.5; down; sleep 0.8; send "\r"
+        prompt; sleep 1.0; send -h "hostname\r"
+        prompt; sleep 1.0; send -h "whoami\r"
+        prompt; sleep 1.5; send -h "exit\r"
+    }
+    forward {
+        record $cast {{ssm-commander forward -p prod --save db} {ssm-commander forward db}}
+        expect "Select an instance to forward through"
+        sleep 2.5; send -h "bast"; sleep 1.0; send "\r"
+        expect "Remote service host"; sleep 1.2; send -h "db.internal\r"
+        expect "Remote service port"; sleep 0.8; send -h "5432\r"
+        expect "Local port"; sleep 0.8; send -h "15432\r"
+        expect "Waiting for connections"; sleep 2.5; send "\003"
+        expect "Waiting for connections"; sleep 2.5; send "\003"
+    }
+    ssh {
+        record $cast {{ssm-commander ssh --profile prod ubuntu@api-2} {ssm-commander scp --profile prod ./deploy.tar.gz ubuntu@api-2:/tmp/}}
+        expect -re {ubuntu@ip-[0-9-]+:~\$ $}
+        sleep 1.0; send -h "uptime\r"
+        expect -re {ubuntu@ip-[0-9-]+:~\$ $}
+        sleep 1.5; send -h "exit\r"
+    }
+    default { puts stderr "unknown scenario $scenario"; exit 2 }
+}
 expect eof

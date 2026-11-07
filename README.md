@@ -60,6 +60,8 @@ ssm-commander forward --list
 ssm-commander forward --delete prod-db
 ```
 
+![Demo: save a port-forwarding preset, then reuse it by name](demo/forward.gif)
+
 `--remote-host localhost` forwards a port of the instance itself. Values you do not pass are prompted for.
 Press Ctrl+C to stop forwarding.
 
@@ -71,6 +73,8 @@ ssm-commander ssh --profile prod web-1                  # interactive shell as e
 ssm-commander scp --profile prod ./dump.sql ubuntu@web-1:/tmp/
 ssm-commander scp --profile prod -r ubuntu@web-1:/var/log/app ./logs
 ```
+
+![Demo: ssh and scp by instance name](demo/ssh.gif)
 
 Argument order for `ssh`: ssm-commander's own options (`--profile`, `--region`, `--user`, `--identity`,
 `--port`, `--connectable`) first, then the target, then ssh's own options and the remote command, exactly as you

@@ -1,14 +1,25 @@
 // Runs the real commands against a fictitious fleet so the README recordings show the whole experience
 // (profiles, the searchable table with its Note column, sessions, presets) without touching AWS.
 // Bundled by demo/build.mjs, started through demo/run.mjs and driven by demo/record.exp.
+
 import { spawn } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { Task } from '@aws-sdk/client-ecs';
+import {
+  type ClusterRow,
+  type ServiceSummary,
+  sortTasks,
+  type TaskRow,
+  toClusterRow,
+  toTaskRow,
+} from '../src/aws/ecs.js';
 import { type Ec2Summary, mergeInstances, type SsmSummary, sortInstances } from '../src/aws/instances.js';
 import { main } from '../src/cli.js';
 import type { ConnectDeps } from '../src/commands/connect.js';
+import type { ExecDeps } from '../src/commands/exec.js';
 import { FORWARD_DOCUMENT, type ForwardDeps } from '../src/commands/forward.js';
 import type { SshDeps } from '../src/commands/ssh.js';
 import { spawnInherited } from '../src/session/spawn-inherited.js';
@@ -16,6 +27,7 @@ import { emptyHistory, recordConnection } from '../src/storage/history.js';
 import { loadPresets, savePresets } from '../src/storage/presets.js';
 import type { AwsContext, StartSessionInput } from '../src/types.js';
 import { descriptionInput } from '../src/ui/description-input.js';
+import { pickCluster, pickContainer, pickService, pickTask } from '../src/ui/ecs-picker.js';
 import { pickInstance } from '../src/ui/instance-picker.js';
 import { info, spinner, warn } from '../src/ui/output.js';
 import { confirmOverwrite, promptIo, promptProfile, requireTty } from '../src/ui/prompts.js';
@@ -101,6 +113,78 @@ const AGENTS: SsmSummary[] = [
   { ...online('i-0f3a9c1d2e4b5a606', '10.0.2.9'), pingStatus: 'ConnectionLost' },
 ];
 
+// A small ECS estate for the exec demo: two clusters, a service without exec, and a scheduled task.
+const ECS_ACCOUNT = 'arn:aws:ecs:ap-northeast-2:123456789012';
+const hoursAgo = (hours: number) => new Date(Date.now() - hours * 3_600_000);
+const ecsTask = (cluster: string, id: string, group: string, startedHoursAgo: number, over: Partial<Task> = {}) =>
+  toTaskRow(
+    {
+      taskArn: `${ECS_ACCOUNT}:task/${cluster}/${id}`,
+      lastStatus: 'RUNNING',
+      desiredStatus: 'RUNNING',
+      healthStatus: 'HEALTHY',
+      group,
+      launchType: 'FARGATE',
+      startedAt: hoursAgo(startedHoursAgo),
+      availabilityZone: 'ap-northeast-2a',
+      enableExecuteCommand: true,
+      taskDefinitionArn: `${ECS_ACCOUNT}:task-definition/${group.split(':')[1]}:42`,
+      containers: [
+        {
+          name: 'app',
+          runtimeId: `${id}-0001`,
+          lastStatus: 'RUNNING',
+          managedAgents: [{ name: 'ExecuteCommandAgent', lastStatus: 'RUNNING' }],
+        },
+      ],
+      ...over,
+    },
+    cluster,
+  );
+const ecsService = (name: string, desired: number, running: number, execEnabled = true): ServiceSummary => ({
+  name,
+  arn: `${ECS_ACCOUNT}:service/prod/${name}`,
+  desired,
+  running,
+  launchType: 'FARGATE',
+  taskDefinition: `${name}:42`,
+  execEnabled,
+  status: 'ACTIVE',
+});
+const CLUSTERS: ClusterRow[] = [
+  toClusterRow({
+    clusterName: 'prod',
+    clusterArn: `${ECS_ACCOUNT}:cluster/prod`,
+    status: 'ACTIVE',
+    activeServicesCount: 3,
+    runningTasksCount: 5,
+  }),
+  toClusterRow({
+    clusterName: 'staging',
+    clusterArn: `${ECS_ACCOUNT}:cluster/staging`,
+    status: 'ACTIVE',
+    activeServicesCount: 2,
+    runningTasksCount: 2,
+  }),
+];
+const SERVICES: Record<string, ServiceSummary[]> = {
+  prod: [ecsService('api', 2, 2), ecsService('worker', 1, 1), ecsService('legacy', 1, 1, false)],
+  staging: [ecsService('api', 1, 1), ecsService('worker', 1, 1)],
+};
+const TASKS: Record<string, TaskRow[]> = {
+  prod: [
+    ecsTask('prod', '3f9c1d2e4b5a60017a8b9c0d1e2f3a4b', 'service:api', 26),
+    ecsTask('prod', '7b2e9f0a1c3d4e5f60718293a4b5c6d7', 'service:api', 3),
+    ecsTask('prod', 'c4d5e6f708192a3b4c5d6e7f80912a3b', 'service:worker', 50),
+    ecsTask('prod', 'e1f2a3b4c5d6e7f8091a2b3c4d5e6f70', 'service:legacy', 200, { enableExecuteCommand: false }),
+    ecsTask('prod', '9a8b7c6d5e4f30211203f4e5d6c7b8a9', 'family:nightly-report', 1),
+  ],
+  staging: [
+    ecsTask('staging', '0a1b2c3d4e5f60718293a4b5c6d7e8f9', 'service:api', 5),
+    ecsTask('staging', '5e6f708192a3b4c5d6e7f8091a2b3c4d', 'service:worker', 5),
+  ],
+};
+
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const privateIpOf = (instanceId: string) => FLEET.find((i) => i.instanceId === instanceId)?.privateIp ?? '10.0.0.1';
 const credentials = async () => ({ accessKeyId: 'demo', secretAccessKey: 'demo' });
@@ -170,4 +254,29 @@ const ssh: SshDeps = {
   },
 };
 
-process.exitCode = await main(process.argv, { connect, forward, ssh, scp: ssh });
+// The exec command gets the ECS estate above; the fake session plays the container shell.
+const exec: ExecDeps = {
+  resolveContext,
+  ecsClient: async () => ({ send: async () => ({}) }),
+  fetchClusters: async () => {
+    await pause(600);
+    return CLUSTERS;
+  },
+  fetchServices: async (_ecs, cluster) => SERVICES[cluster] ?? [],
+  fetchTasks: async (_ecs, cluster, service) => {
+    await pause(600);
+    return sortTasks((TASKS[cluster] ?? []).filter((t) => service === undefined || t.service === service));
+  },
+  describeTask: async (_ecs, cluster, taskId) => (TASKS[cluster] ?? []).find((t) => t.taskId === taskId) ?? null,
+  pickCluster,
+  pickService,
+  pickTask: (rows, service) => pickTask(rows, service),
+  pickContainer,
+  runExecSession: (ctx, input) =>
+    spawnInherited(process.execPath, [FAKE_SESSION, 'exec', ctx.profile, input.container], process.env),
+  requireTty: () => requireTty(),
+  info,
+  spinner,
+};
+
+process.exitCode = await main(process.argv, { connect, forward, ssh, scp: ssh, exec });

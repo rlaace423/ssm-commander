@@ -1,6 +1,6 @@
 #!/usr/bin/expect -f
 # Drives one demo scenario under asciinema with human-like pauses so the README recordings are reproducible.
-# usage (from the repository root): expect demo/record.exp <connect|forward|ssh> <output.cast>
+# usage (from the repository root): expect demo/record.exp <connect|forward|ssh|exec> <output.cast>
 set scenario [lindex $argv 0]
 set cast [lindex $argv 1]
 set timeout 30
@@ -43,6 +43,21 @@ switch $scenario {
         expect -re {ubuntu@ip-[0-9-]+:~\$ $}
         sleep 1.0; send -h "uptime\r"
         expect -re {ubuntu@ip-[0-9-]+:~\$ $}
+        sleep 1.5; send -h "exit\r"
+    }
+    exec {
+        record $cast {{ssm-commander exec -p prod}}
+        expect "Select a cluster"
+        sleep 2.5; send "\r"
+        expect "Select a service in prod"
+        sleep 3.0; send -h "api"; sleep 1.0; send "\r"
+        expect "Select a task of api"
+        sleep 3.0; send "\r"
+        expect -re {# $}
+        sleep 1.0; send -h "hostname\r"
+        expect -re {# $}
+        sleep 1.0; send -h "cat /etc/os-release\r"
+        expect -re {# $}
         sleep 1.5; send -h "exit\r"
     }
     default { puts stderr "unknown scenario $scenario"; exit 2 }

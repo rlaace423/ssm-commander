@@ -2,7 +2,8 @@
 
 Connect to EC2 instances through AWS Systems Manager Session Manager **by name instead of instance id**: pick a
 profile, pick an instance from a searchable list, and you are in. Port forwarding, `ssh` and `scp` over Session
-Manager are included, across all of your AWS profiles, and the AWS CLI is not required.
+Manager and `exec` into ECS containers are included, across all of your AWS profiles, and the AWS CLI is not
+required.
 
 ![Demo: pick a profile, pick an instance from the table, and you are in a shell](demo/connect.gif)
 
@@ -19,6 +20,9 @@ Inspired by [gossm](https://github.com/gjbae1212/gossm) (archived in 2025).
 - IAM permissions for the profile you use: `ec2:DescribeInstances`, `ssm:DescribeInstanceInformation`,
   `ssm:StartSession`, `ssm:TerminateSession`. Optional: `ec2:DescribeRegions` for the region picker and
   `sts:GetCallerIdentity` for `doctor --profile`.
+- For `exec` (ECS): `ecs:ListClusters`, `ecs:DescribeClusters`, `ecs:ListServices`, `ecs:DescribeServices`,
+  `ecs:ListTasks`, `ecs:DescribeTasks`, `ecs:ExecuteCommand`. With `--cluster` and `--task` only the last two
+  are needed.
 - On the instances: SSM Agent online and an instance profile that allows Session Manager. For `ssh` and `scp`
   additionally an SSH server and your public key in the target user's `authorized_keys`.
 
@@ -49,6 +53,29 @@ The list shows every instance of the region except terminated ones, with the col
 SSM, Type, Private IP and Public IP. Type to filter by name, instance id or IP address. Recently connected
 instances come first and are marked with `*`. Instances that cannot be connected (stopped, no SSM agent, agent
 connection lost) are dimmed with the reason and cannot be selected; naming one explicitly fails with that reason.
+
+### exec (ECS containers)
+
+```bash
+ssm-commander exec                              # cluster → service → task → shell in the container
+ssm-commander exec prod/api                     # service in a cluster; the task is asked for only when there are several
+ssm-commander exec api -p prod                  # service name, searched in every cluster
+ssm-commander exec --cluster prod --task 0123456789abcdef0123456789abcdef --container app
+ssm-commander exec prod/api --command bash
+```
+
+![Demo: pick a cluster, a service and a task, and you are in the container](demo/exec.gif)
+
+Opens an interactive command (default `/bin/sh`) in a container through ECS Exec, the way
+`aws ecs execute-command` does, without looking up the task id first. Each step shows a table (cluster, then
+service, then task; a container is asked for only when the task has several), and a step given on the command
+line or with a single possible choice is skipped. Tasks that cannot be reached are dimmed with the reason: not
+running, `exec disabled` (the task was started without `enableExecuteCommand`), `agent pending`, `no exec
+agent`. Tasks that belong to no service are listed under `(no service)`.
+
+The task side needs what ECS Exec always needs: the service or task started with `enableExecuteCommand`, and a
+task role allowing `ssmmessages:CreateControlChannel`, `ssmmessages:CreateDataChannel`,
+`ssmmessages:OpenControlChannel` and `ssmmessages:OpenDataChannel`. Port forwarding to tasks is not provided.
 
 ### forward
 
@@ -102,9 +129,16 @@ credentials work (STS GetCallerIdentity). Exit code 1 if anything fails.
 - Profile: `-p/--profile` → `AWS_PROFILE` → prompt (skipped when only one profile exists).
 - Region: `-r/--region` → `AWS_REGION` / `AWS_DEFAULT_REGION` → the profile's `region` → prompt.
 
-MFA-protected `assume-role` profiles prompt for the code in `connect`, `forward` and `doctor`; `ssh` and `scp`
+MFA-protected `assume-role` profiles prompt for the code in `connect`, `exec`, `forward` and `doctor`; `ssh` and `scp`
 cannot prompt (the SSH data channel occupies stdin), so use them with profiles that need no MFA code. SSO profiles
 work while their token is valid; this tool does not run the SSO login itself.
+
+### Working with narrow permissions
+
+The listings are a convenience. When a profile may not call `ec2:DescribeInstances`, `connect`, `forward --target`,
+`ssh` and `scp` still work with an instance id (a warning says the instance was not checked); a Name tag needs
+the listing. For `exec`, `--cluster` together with `--task` calls only `ecs:DescribeTasks` and
+`ecs:ExecuteCommand`, exactly what the AWS CLI needs.
 
 ## How it works
 
@@ -112,7 +146,9 @@ The AWS SDK lists instances (`DescribeInstances` joined with `DescribeInstanceIn
 and calls `StartSession`. The response is handed to `session-manager-plugin` exactly the way the AWS CLI does it
 (through the `AWS_SSM_START_SESSION_RESPONSE` environment variable), with the terminal inherited by the plugin, so
 nothing sits between your keyboard and the remote shell. Ctrl+C goes to the remote shell, not to ssm-commander.
-When the session ends, `TerminateSession` is called as a safety net.
+When the session ends, `TerminateSession` is called as a safety net. For `exec`, `ecs:ExecuteCommand` returns the
+same kind of session and the plugin is started with the `ecs:<cluster>_<task>_<runtimeId>` target, exactly as
+`aws ecs execute-command` does.
 
 ## Files and environment variables
 

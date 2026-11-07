@@ -44,6 +44,23 @@ switch (mode) {
     });
     break;
   }
+  case 'exec': {
+    // An ECS Exec shell in a container: root, Alpine, the task's ENI hostname.
+    const [profile = 'demo'] = rest;
+    const id = `ecs-execute-command-${profile}0a1b2c3d4e5f6789`;
+    shell({
+      banner: `\nStarting session with SessionId: ${id}\n`,
+      prompt: '# ',
+      responses: {
+        hostname: ['ip-10-0-1-45.ap-northeast-2.compute.internal'],
+        whoami: ['root'],
+        uptime: [UPTIME],
+        'cat /etc/os-release': ['NAME="Alpine Linux"', 'ID=alpine', 'PRETTY_NAME="Alpine Linux v3.20"'],
+      },
+      farewell: `\n\nExiting session with sessionId: ${id}.\n`,
+    });
+    break;
+  }
   case 'forward': {
     const [profile = 'demo', port = '0'] = rest;
     const id = sessionIdFor(profile);

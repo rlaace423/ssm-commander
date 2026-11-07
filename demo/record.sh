@@ -7,7 +7,7 @@ node demo/build.mjs
 DEMO_HOME="$(mktemp -d)"
 export DEMO_HOME
 trap 'rm -rf "$DEMO_HOME"' EXIT
-for scenario in connect forward ssh; do
+for scenario in connect forward ssh exec; do
   expect demo/record.exp "$scenario" "demo/build/$scenario.cast"
   agg --cols 130 --rows 22 --font-size 14 --theme github-dark --idle-time-limit 4 --last-frame-duration 2 \
     "demo/build/$scenario.cast" "demo/$scenario.gif"

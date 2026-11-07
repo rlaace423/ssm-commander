@@ -28,11 +28,7 @@ function cellText(text: string, width: number): string {
 }
 
 /** Renders a box-drawing table whose column widths are measured by display width (wide characters count as 2). */
-export function createTable<T extends Record<string, unknown>>(
-  columns: TableColumn[],
-  rows: T[],
-  cell: (row: T, key: string) => string,
-): Table<T> {
+export function createTable<T>(columns: TableColumn[], rows: T[], cell: (row: T, key: string) => string): Table<T> {
   const cells = rows.map((row) => columns.map((column) => cell(row, column.key)));
   const widths = columns.map((column, i) =>
     Math.max(stringWidth(column.header), ...cells.map((values) => stringWidth(values[i] ?? ''))),

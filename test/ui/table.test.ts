@@ -18,8 +18,8 @@ describe('createTable', () => {
         { key: 'name', header: 'Name' },
         { key: 'id', header: 'Instance Id' },
       ],
-      [{ name: 'web', id: 'i-1' }],
-      (r, k) => String(r[k]),
+      [{ name: 'web', id: 'i-1' }] as Record<string, string>[],
+      (r, k) => r[k] ?? '',
     );
     const [top, head, sep] = t.header.split('\n');
     expect(top).toBe('┌──────┬─────────────┐');

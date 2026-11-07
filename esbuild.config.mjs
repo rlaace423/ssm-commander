@@ -8,6 +8,9 @@ await build({
   splitting: true,
   format: 'esm',
   platform: 'node',
+  // Prefer the SDK's ESM builds: with the Node default (main first) the AWS SDK is bundled from CommonJS,
+  // and a dynamic import() of a CommonJS module only exposes `default`, so `EC2Client` came back undefined.
+  mainFields: ['module', 'main'],
   target: 'node22',
   outExtension: { '.js': '.mjs' },
   sourcemap: false,

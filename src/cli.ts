@@ -3,6 +3,7 @@ import { pathToFileURL } from 'node:url';
 import { Command, CommanderError, InvalidArgumentError } from 'commander';
 import pkg from '../package.json' with { type: 'json' };
 import { runConnect } from './commands/connect.js';
+import { runDoctor } from './commands/doctor.js';
 import { type ForwardOptions, runForward, validatePort } from './commands/forward.js';
 import { type ProxyOptions, runProxy } from './commands/proxy.js';
 import { runScp } from './commands/scp.js';
@@ -86,6 +87,14 @@ export function createProgram(): Command {
   ).action(async (args: string[], opts: SshOptions) => {
     lastExitCode = await runScp(args, opts);
   });
+
+  program
+    .command('doctor')
+    .description('Check Node.js, session-manager-plugin, AWS config files and (with --profile) the credentials')
+    .option('-p, --profile <profile>', 'profile whose credentials to verify with STS GetCallerIdentity')
+    .action(async (opts: { profile?: string }) => {
+      lastExitCode = await runDoctor(opts);
+    });
 
   program
     .command('proxy', { hidden: true })

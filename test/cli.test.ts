@@ -39,6 +39,11 @@ describe('createProgram', () => {
     );
   });
 
+  test('registers doctor with a profile option', () => {
+    const doctor = createProgram().commands.find((c) => c.name() === 'doctor');
+    expect(doctor?.options.map((o) => o.long)).toEqual(['--profile']);
+  });
+
   test('registers forward with preset management options', () => {
     const forward = createProgram().commands.find((c) => c.name() === 'forward');
     expect(forward?.options.map((o) => o.long)).toEqual(

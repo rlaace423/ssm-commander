@@ -1,9 +1,10 @@
 import { type ChildProcess, type SpawnOptions, spawn } from 'node:child_process';
+import { constants } from 'node:os';
 import { CliError } from '../errors.js';
 
 export const IGNORED_SIGNALS_POSIX: NodeJS.Signals[] = ['SIGINT', 'SIGQUIT', 'SIGTSTP'];
 export const IGNORED_SIGNALS_WIN32: NodeJS.Signals[] = ['SIGINT'];
-/** Termination requests aimed at us are passed on to the child so it never outlives us. */
+/** Termination requests aimed at us are passed on to the child so it never outlives us; we then exit normally after it. */
 const FORWARDED_SIGNALS_POSIX: NodeJS.Signals[] = ['SIGTERM', 'SIGHUP'];
 
 export type SpawnFn = (command: string, args: string[], options: SpawnOptions) => ChildProcess;
@@ -11,13 +12,14 @@ export type SpawnFn = (command: string, args: string[], options: SpawnOptions) =
 export interface SpawnInheritedDeps {
   spawn?: SpawnFn;
   platform?: NodeJS.Platform;
-  proc?: Pick<NodeJS.Process, 'on' | 'off' | 'exit'>;
+  proc?: Pick<NodeJS.Process, 'on' | 'off'>;
 }
 
 /**
  * Hands the terminal to a child process. The parent ignores the keyboard signals so Ctrl+C reaches
  * only the child (which decides what to do with it), exactly like the AWS CLI does for its plugin.
  * Rejects with the raw spawn error (e.g. code ENOENT) so callers can name the missing executable.
+ * A child killed by a signal resolves with 128 + the signal number, like a shell would report it.
  */
 export function spawnInherited(
   command: string,
@@ -35,9 +37,9 @@ export function spawnInherited(
     const child = spawnFn(command, args, { stdio: 'inherit', env });
     const ignore = () => {};
     const forwarders = forwarded.map((signal) => {
+      // Only relay the signal: the child's exit resolves this promise, so callers' cleanup (TerminateSession) still runs.
       const handler = () => {
         child.kill(signal);
-        proc.exit(1);
       };
       return [signal, handler] as const;
     });
@@ -53,7 +55,9 @@ export function spawnInherited(
       fn();
     };
     child.once('error', (err: NodeJS.ErrnoException) => finish(() => reject(err)));
-    child.once('exit', (code) => finish(() => resolve(code ?? 1)));
+    child.once('exit', (code, signal) =>
+      finish(() => resolve(code ?? (signal ? 128 + (constants.signals[signal] ?? 0) : 1))),
+    );
   });
 }
 

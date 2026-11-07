@@ -168,27 +168,6 @@ Verified on macOS; Linux uses the same code paths. Windows: untested. The code l
 `session-manager-plugin.exe` and never goes through a shell, but ssh/scp ProxyCommand quoting and signal handling
 have not been exercised there.
 
-## Manual verification checklist
-
-Run these against a profile and two instances you can reach (one Ubuntu, one Amazon Linux work well):
-
-- [ ] `ssm-commander doctor -p <profile>` prints ✔ on every line.
-- [ ] `ssm-commander connect <name> -p <profile>` opens a shell; `echo ok` prints `ok`; `exit` ends the session
-  and the plugin prints `Exiting session with sessionId`.
-- [ ] `ssm-commander connect -p <profile>` lists instances with State and SSM columns; the one you just used is
-  marked `*`; non-connectable rows are dimmed with a reason and cannot be selected.
-- [ ] `ssm-commander connect <stopped-instance-name> -p <profile>` fails with `cannot be connected: stopped`.
-- [ ] `ssm-commander connect --connectable -p <profile>` hides the non-connectable rows.
-- [ ] `ssm-commander forward -p <profile> --target <name> --remote-host localhost --remote-port 22 --local-port 2222 --save t`
-  then, in another terminal, `ssh -p 2222 <user>@localhost hostname` prints the hostname; Ctrl+C stops the
-  forward; `ssm-commander forward t` starts again without prompts; `ssm-commander forward --list` shows `t`.
-- [ ] `ssm-commander ssh --profile <profile> --user ubuntu <ubuntu-name> hostname` prints the hostname, and
-  `ssm-commander ssh --profile <profile> <amazon-linux-name> whoami` prints `ec2-user`.
-- [ ] `ssm-commander scp --profile <profile> ./file user@<name>:/tmp/file` followed by the download in the other
-  direction gives an identical file; `-r` copies a directory.
-- [ ] Inside a session, Ctrl+C interrupts the remote command (try `sleep 30`) and ssm-commander keeps running.
-- [ ] After every session no `session-manager-plugin` process is left behind (`pgrep session-manager-plugin`).
-
 ## Development
 
 ```bash
@@ -199,7 +178,8 @@ npm run lint        # biome
 npm run build       # esbuild → dist/
 ```
 
-Design and implementation notes live under `docs/superpowers/`.
+Design and implementation notes live under `docs/superpowers/`; the release checklist that exercises the real
+plugin and AWS APIs is [docs/manual-verification.md](docs/manual-verification.md).
 
 ## License
 

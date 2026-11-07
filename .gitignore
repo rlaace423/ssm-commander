@@ -178,3 +178,6 @@ dist
 .DS_Store
 
 build
+
+# superpowers plan workspace (scratch)
+.superpowers/

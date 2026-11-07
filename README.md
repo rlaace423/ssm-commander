@@ -23,7 +23,8 @@ Inspired by [gossm](https://github.com/gjbae1212/gossm) (archived in 2025).
 - For `exec` (ECS): `ecs:ListClusters`, `ecs:DescribeClusters`, `ecs:ListServices`, `ecs:DescribeServices`,
   `ecs:ListTasks`, `ecs:DescribeTasks`, `ecs:ExecuteCommand`. With `--cluster` and `--task` only the last two
   are needed. Port forwarding through a task (`forward --target ecs:...`) uses `ssm:StartSession` and
-  `ssm:TerminateSession` instead of `ecs:ExecuteCommand`.
+  `ssm:TerminateSession` instead of `ecs:ExecuteCommand`. `doctor --ecs` additionally reads
+  `ecs:DescribeTaskDefinition` and, to verify the task role, `iam:SimulatePrincipalPolicy`.
 - On the instances: SSM Agent online and an instance profile that allows Session Manager. For `ssh` and `scp`
   additionally an SSH server and your public key in the target user's `authorized_keys`.
 
@@ -129,10 +130,14 @@ recorded under the instance id.
 
 ```bash
 ssm-commander doctor -p prod
+ssm-commander doctor -p prod --ecs prod/api        # plus the ECS Exec prerequisites of a service (or cluster/service/task-id)
 ```
 
 Checks Node.js, session-manager-plugin (path and version), your AWS config files and, with `--profile`, that the
-credentials work (STS GetCallerIdentity). Exit code 1 if anything fails.
+credentials work (STS GetCallerIdentity). With `--ecs cluster/service` it also checks what ECS Exec needs on the
+service's newest task: execute command enabled on the service and the task, a Fargate platform version of 1.4.0
+or newer, a running ExecuteCommandAgent, and a task role that IAM confirms may use the `ssmmessages` channel
+actions (`iam:SimulatePrincipalPolicy`; shown as `!` when that call is not allowed). Exit code 1 if anything fails.
 
 ### Profile and region resolution
 

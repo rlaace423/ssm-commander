@@ -64,10 +64,13 @@ export interface TaskRow {
   lastStatus: string;
   health: string | null;
   launchType: string | null;
+  /** Fargate platform version (ECS Exec needs 1.4.0 or newer); null on EC2. */
+  platformVersion?: string | null;
   startedAt: Date | null;
   availabilityZone: string | null;
   execEnabled: boolean;
   taskDefinition: string | null;
+  taskDefinitionArn?: string | null;
   containers: ContainerInfo[];
   agentStatus: string | null;
   connectable: boolean;
@@ -163,10 +166,12 @@ export function toTaskRow(task: Task, clusterName: string): TaskRow {
     lastStatus,
     health: task.healthStatus ?? null,
     launchType: task.launchType ?? null,
+    platformVersion: task.platformVersion ?? null,
     startedAt: task.startedAt ?? null,
     availabilityZone: task.availabilityZone ?? null,
     execEnabled,
     taskDefinition: task.taskDefinitionArn ? nameFromArn(task.taskDefinitionArn) : null,
+    taskDefinitionArn: task.taskDefinitionArn ?? null,
     containers,
     agentStatus: agentStatuses.includes('RUNNING') ? 'RUNNING' : (agentStatuses[0] ?? null),
     connectable: reason === null,
@@ -306,6 +311,26 @@ export async function describeTask(ecs: Sender, cluster: string, taskId: string)
   const described = await ecs.send(new DescribeTasksCommand({ cluster, tasks: [taskId] }));
   const task = described.tasks?.[0];
   return task ? toTaskRow(task, cluster) : null;
+}
+
+export interface TaskDefinitionSummary {
+  taskRoleArn: string | null;
+  executionRoleArn: string | null;
+  /** Recommended for ECS Exec so the agent's child processes are reaped. */
+  initProcessEnabled: boolean;
+}
+
+export async function describeTaskDefinition(ecs: Sender, taskDefinition: string): Promise<TaskDefinitionSummary> {
+  const { DescribeTaskDefinitionCommand } = await import('@aws-sdk/client-ecs');
+  const response = await ecs.send(new DescribeTaskDefinitionCommand({ taskDefinition }));
+  const definition = response?.taskDefinition ?? {};
+  const containers: Array<{ linuxParameters?: { initProcessEnabled?: boolean } }> =
+    definition.containerDefinitions ?? [];
+  return {
+    taskRoleArn: definition.taskRoleArn ?? null,
+    executionRoleArn: definition.executionRoleArn ?? null,
+    initProcessEnabled: containers.some((c) => c.linuxParameters?.initProcessEnabled === true),
+  };
 }
 
 export interface ExecInput {

@@ -1,5 +1,6 @@
 import type { EC2Client } from '@aws-sdk/client-ec2';
 import type { ECSClient } from '@aws-sdk/client-ecs';
+import type { IAMClient } from '@aws-sdk/client-iam';
 import { SSMClient } from '@aws-sdk/client-ssm';
 import { STSClient } from '@aws-sdk/client-sts';
 import type { AwsContext } from '../types.js';
@@ -22,6 +23,12 @@ export async function createEc2Client(ctx: AwsContext): Promise<EC2Client> {
 export async function createEcsClient(ctx: AwsContext): Promise<ECSClient> {
   const { ECSClient } = await import('@aws-sdk/client-ecs');
   return new ECSClient(clientConfig(ctx));
+}
+
+/** Only `doctor --ecs` needs IAM (to simulate the task role's policies). */
+export async function createIamClient(ctx: AwsContext): Promise<IAMClient> {
+  const { IAMClient } = await import('@aws-sdk/client-iam');
+  return new IAMClient(clientConfig(ctx));
 }
 
 export function createStsClient(ctx: AwsContext): STSClient {

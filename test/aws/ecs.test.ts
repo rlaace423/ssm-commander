@@ -3,6 +3,7 @@ import { describe, expect, test, vi } from 'vitest';
 import {
   buildExecTarget,
   describeTask,
+  describeTaskDefinition,
   ecsEndpoint,
   executeCommand,
   fetchClusters,
@@ -119,6 +120,12 @@ describe('toTaskRow', () => {
     expect(toTaskRow(pendingAgent, 'prod')).toMatchObject({ reason: 'agent pending', agentStatus: 'PENDING' });
     const noAgent = task({ containers: [{ name: 'app', managedAgents: [] }] });
     expect(toTaskRow(noAgent, 'prod')).toMatchObject({ reason: 'no exec agent', agentStatus: null });
+  });
+
+  test('carries the platform version and task definition arn for doctor', () => {
+    const row = toTaskRow(task({ platformVersion: '1.4.0' }), 'prod');
+    expect(row.platformVersion).toBe('1.4.0');
+    expect(row.taskDefinitionArn).toBe('arn:aws:ecs:ap-northeast-2:123456789012:task-definition/api:42');
   });
 
   test('a task started outside a service has no service name', () => {
@@ -304,6 +311,31 @@ describe('fetchers', () => {
       clusterArn: 'arn:x/prod',
       taskArn: TASK_ARN,
       containerName: 'app',
+    });
+  });
+
+  test('describeTaskDefinition returns the roles and the init-process flag', async () => {
+    const send = vi.fn(async (cmd: Cmd) => {
+      expect(cmd.constructor.name).toBe('DescribeTaskDefinitionCommand');
+      expect(cmd.input).toEqual({ taskDefinition: 'arn:td/api:42' });
+      return {
+        taskDefinition: {
+          taskRoleArn: 'arn:role/task',
+          executionRoleArn: 'arn:role/exec',
+          containerDefinitions: [{ name: 'app', linuxParameters: { initProcessEnabled: true } }],
+        },
+      };
+    });
+    expect(await describeTaskDefinition({ send }, 'arn:td/api:42')).toEqual({
+      taskRoleArn: 'arn:role/task',
+      executionRoleArn: 'arn:role/exec',
+      initProcessEnabled: true,
+    });
+    const bare = vi.fn(async () => ({ taskDefinition: { containerDefinitions: [{ name: 'app' }] } }));
+    expect(await describeTaskDefinition({ send: bare }, 'x')).toEqual({
+      taskRoleArn: null,
+      executionRoleArn: null,
+      initProcessEnabled: false,
     });
   });
 

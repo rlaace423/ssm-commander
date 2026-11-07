@@ -118,9 +118,13 @@ export function createProgram(deps: ProgramDeps = {}): Command {
 
   program
     .command('doctor')
-    .description('Check Node.js, session-manager-plugin, AWS config files and (with --profile) the credentials')
+    .description(
+      'Check Node.js, session-manager-plugin, AWS config files, (with --profile) the credentials and (with --ecs) ECS Exec',
+    )
     .option('-p, --profile <profile>', 'profile whose credentials to verify with STS GetCallerIdentity')
-    .action(async (opts: { profile?: string }) => {
+    .option('-r, --region <region>', 'region for the ECS checks (defaults to the profile region)')
+    .option('--ecs <target>', 'also check the ECS Exec prerequisites of cluster/service[/task-id]')
+    .action(async (opts: { profile?: string; region?: string; ecs?: string }) => {
       lastExitCode = await runDoctor(opts);
     });
 

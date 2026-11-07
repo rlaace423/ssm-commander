@@ -37,3 +37,5 @@ Linux work well) and, for `exec`, an ECS service with `enableExecuteCommand` on.
   opens the tunnel; `curl localhost:18080` answers from the container; Ctrl+C stops it; `ssm-commander forward t2`
   runs again without prompts and names the task it went through.
 - [ ] After every session no `session-manager-plugin` process is left behind (`pgrep session-manager-plugin`).
+- [ ] `ssm-commander doctor -p <profile> --ecs <cluster>/<service>` prints ✔ for the service, task, exec agent and
+  task role of a working service, and ✘ with the `update-service` hint for a service without execute command.

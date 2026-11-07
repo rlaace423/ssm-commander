@@ -57,3 +57,18 @@ describe('descriptionInput', () => {
     expect(await answer).toBe('x');
   });
 });
+
+describe('descriptionInput after the answer', () => {
+  test('collapses to the answered line and drops the description', async () => {
+    const { answer, events, getScreen } = await render(descriptionInput, {
+      message: 'Remote service port',
+      description: 'Port of the service on the remote host.',
+      default: '5432',
+    });
+    events.keypress('enter');
+    expect(await answer).toBe('5432');
+    expect(getScreen()).toContain('Remote service port');
+    expect(getScreen()).toContain('5432');
+    expect(getScreen()).not.toContain('Port of the service on the remote host.');
+  });
+});

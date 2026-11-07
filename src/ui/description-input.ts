@@ -67,5 +67,7 @@ export const descriptionInput = createPrompt<string, DescriptionInputConfig>((co
   const defaultStr = defaultValue && status !== 'done' && !value ? theme.style.defaultAnswer(defaultValue) : undefined;
   const secondLine = errorMsg ? theme.style.error(errorMsg) : theme.style.help(config.description);
 
-  return [[prefix, message, defaultStr, formattedValue].filter((part) => part !== undefined).join(' '), secondLine];
+  const firstLine = [prefix, message, defaultStr, formattedValue].filter((part) => part !== undefined).join(' ');
+  // Like the built-in prompts, collapse to the answered line once done; the help text has served its purpose.
+  return status === 'done' ? firstLine : [firstLine, secondLine];
 });

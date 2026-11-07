@@ -5,6 +5,7 @@ import {
   buildForwardSessionInput,
   FORWARD_DOCUMENT,
   type ForwardDeps,
+  LOCAL_FORWARD_DOCUMENT,
   renderPresetList,
   runForward,
   validatePort,
@@ -154,6 +155,18 @@ describe('helpers', () => {
       Parameters: { host: ['db.internal'], portNumber: ['5432'], localPortNumber: ['15432'] },
     });
     expect(FORWARD_DOCUMENT).toBe('AWS-StartPortForwardingSessionToRemoteHost');
+  });
+
+  test('buildForwardSessionInput uses the plain port-forwarding document for the instance or task itself', () => {
+    // ECS tasks refuse AWS-StartPortForwardingSessionToRemoteHost for localhost; the plain document works everywhere.
+    for (const self of ['localhost', '127.0.0.1', '::1']) {
+      expect(buildForwardSessionInput('i-1', self, 22, 2222)).toEqual({
+        Target: 'i-1',
+        DocumentName: LOCAL_FORWARD_DOCUMENT,
+        Parameters: { portNumber: ['22'], localPortNumber: ['2222'] },
+      });
+    }
+    expect(LOCAL_FORWARD_DOCUMENT).toBe('AWS-StartPortForwardingSession');
   });
 
   test('validatePort accepts 1 and 65535 and rejects 0, 65536, "abc"', () => {

@@ -27,6 +27,9 @@ import { defaultEcsSelectionDeps, type EcsSelectionDeps, selectEcsContainer } fr
 import { rowsOrTrustedId, selectInstance } from './select-instance.js';
 
 export const FORWARD_DOCUMENT = 'AWS-StartPortForwardingSessionToRemoteHost';
+export const LOCAL_FORWARD_DOCUMENT = 'AWS-StartPortForwardingSession';
+/** Names of the instance or task itself: these take the plain document, which every agent accepts. */
+const SELF_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
 const PORT_ERROR = 'Enter a port number between 1 and 65535';
 
 export function validatePort(text: string): true | string {
@@ -34,18 +37,21 @@ export function validatePort(text: string): true | string {
   return /^\d+$/.test(text) && port >= 1 && port <= 65535 ? true : PORT_ERROR;
 }
 
-/** `target` is an instance id or, for an ECS hop, the plugin's `ecs:<cluster>_<task>_<runtimeId>` form. */
+/**
+ * `target` is an instance id or, for an ECS hop, the plugin's `ecs:<cluster>_<task>_<runtimeId>` form.
+ * A port of the target itself uses AWS-StartPortForwardingSession (ECS Exec agents refuse the remote-host
+ * document for localhost); any other host goes through AWS-StartPortForwardingSessionToRemoteHost.
+ */
 export function buildForwardSessionInput(
   target: string,
   remoteHost: string,
   remotePort: number,
   localPort: number,
 ): StartSessionInput {
-  return {
-    Target: target,
-    DocumentName: FORWARD_DOCUMENT,
-    Parameters: { host: [remoteHost], portNumber: [String(remotePort)], localPortNumber: [String(localPort)] },
-  };
+  const ports = { portNumber: [String(remotePort)], localPortNumber: [String(localPort)] };
+  return SELF_HOSTS.has(remoteHost)
+    ? { Target: target, DocumentName: LOCAL_FORWARD_DOCUMENT, Parameters: ports }
+    : { Target: target, DocumentName: FORWARD_DOCUMENT, Parameters: { host: [remoteHost], ...ports } };
 }
 
 export interface ForwardOptions {

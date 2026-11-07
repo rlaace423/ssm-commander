@@ -160,7 +160,8 @@ nothing sits between your keyboard and the remote shell. Ctrl+C goes to the remo
 When the session ends, `TerminateSession` is called as a safety net. For `exec`, `ecs:ExecuteCommand` returns the
 same kind of session and the plugin is started with the `ecs:<cluster>_<task>_<runtimeId>` target, exactly as
 `aws ecs execute-command` does. Port forwarding through a task is a normal `StartSession` with that same target,
-which Session Manager accepts for tasks that have ECS Exec enabled.
+which Session Manager accepts for tasks that have ECS Exec enabled. A port of the instance or task itself is
+forwarded with `AWS-StartPortForwardingSession`; any other host with `AWS-StartPortForwardingSessionToRemoteHost`.
 
 ## Files and environment variables
 

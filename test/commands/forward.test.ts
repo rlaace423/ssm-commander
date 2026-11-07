@@ -7,6 +7,7 @@ import {
   validatePort,
 } from '../../src/commands/forward.js';
 import { CliError } from '../../src/errors.js';
+import { emptyHistory, recordConnection } from '../../src/storage/history.js';
 import { emptyPresets, type ForwardPreset, type PresetsFile, upsertPreset } from '../../src/storage/presets.js';
 import type { AwsContext, InstanceRow } from '../../src/types.js';
 
@@ -56,6 +57,7 @@ function makeDeps(over: Partial<ForwardDeps> = {}, presets: PresetsFile = emptyP
     info: vi.fn(),
     writeStdout: vi.fn(),
     spinner: () => ({ stop() {}, fail() {} }),
+    loadHistory: vi.fn(async () => emptyHistory()),
     ...over,
   };
   return deps;
@@ -117,8 +119,51 @@ describe('runForward', () => {
     await runForward(undefined, { remoteHost: 'localhost', remotePort: '22', localPort: '2222' }, deps);
     expect(deps.pickInstance).toHaveBeenCalledWith([web, db], expect.anything());
     expect(deps.descriptionInput).not.toHaveBeenCalled();
-    expect(deps.requireTty).not.toHaveBeenCalled();
+    expect(deps.requireTty).toHaveBeenCalledTimes(1); // once, for the picker, before any AWS call
     expect(deps.runSession).toHaveBeenCalledWith(ctx, buildForwardSessionInput('i-1', 'localhost', 22, 2222));
+  });
+
+  test('requires a TTY before any AWS call when neither preset nor target is given', async () => {
+    const deps = makeDeps({
+      requireTty: () => {
+        throw new CliError('no tty');
+      },
+    });
+    await expect(
+      runForward(undefined, { remoteHost: 'localhost', remotePort: '22', localPort: '2222' }, deps),
+    ).rejects.toThrow('no tty');
+    expect(deps.resolveContext).not.toHaveBeenCalled();
+  });
+
+  test('requires a TTY before asking whether to overwrite an existing preset', async () => {
+    const deps = makeDeps(
+      {
+        requireTty: () => {
+          throw new CliError('no tty');
+        },
+      },
+      upsertPreset(emptyPresets(), preset),
+    );
+    await expect(
+      runForward(
+        undefined,
+        { target: 'web', remoteHost: 'localhost', remotePort: '22', localPort: '3333', save: 'web-ssh' },
+        deps,
+      ),
+    ).rejects.toThrow('no tty');
+    expect(deps.confirmOverwrite).not.toHaveBeenCalled();
+    expect(deps.runSession).not.toHaveBeenCalled();
+  });
+
+  test('orders the instance list by connection history like connect does', async () => {
+    const history = recordConnection(
+      emptyHistory(),
+      { profile: 'default', region: 'ap-northeast-2', instanceId: 'i-2', instanceName: 'db' },
+      new Date('2026-11-07T00:00:00Z'),
+    );
+    const deps = makeDeps({ loadHistory: vi.fn(async () => history) });
+    await runForward(undefined, { target: 'web', remoteHost: 'localhost', remotePort: '22', localPort: '2222' }, deps);
+    expect(deps.listInstances).toHaveBeenCalledWith(ctx, { recentIds: ['i-2'], connectableOnly: false });
   });
 
   test('rejects invalid port options before starting anything', async () => {

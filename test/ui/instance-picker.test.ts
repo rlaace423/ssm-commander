@@ -29,7 +29,7 @@ describe('buildInstanceChoices', () => {
     expect(choices[1]?.name.startsWith('│ db    │ i-2 ')).toBe(true);
     expect(choices[1]?.name.endsWith(' stopped │')).toBe(true);
     expect(choices[1]?.disabled).toBe(true);
-    expect(choices[0]?.name.endsWith('│       │')).toBe(true);
+    expect(choices[0]?.name.endsWith('│         │')).toBe(true); // empty Note cell, width of 'stopped'
     expect(choices[1]?.value).toBe(rows[1]);
     expect(choices[2]?.name.startsWith('│       │ i-3 ')).toBe(true);
   });

@@ -7,6 +7,7 @@ import { configDir } from '../storage/paths.js';
 import type { AwsContext, InstanceRow, StartSessionInput } from '../types.js';
 import { pickInstance } from '../ui/instance-picker.js';
 import { info, type Spinner, spinner, warn } from '../ui/output.js';
+import { requireTty } from '../ui/prompts.js';
 import { selectInstance } from './select-instance.js';
 
 export interface ConnectOptions {
@@ -30,6 +31,7 @@ export interface ConnectDeps {
   warn: (message: string) => void;
   info: (message: string) => void;
   spinner: (text: string) => Spinner;
+  requireTty: () => void;
 }
 
 export function defaultConnectDeps(): ConnectDeps {
@@ -45,6 +47,7 @@ export function defaultConnectDeps(): ConnectDeps {
     warn,
     info,
     spinner,
+    requireTty: () => requireTty(),
   };
 }
 
@@ -57,6 +60,7 @@ export async function runConnect(
   opts: ConnectOptions,
   deps: ConnectDeps = defaultConnectDeps(),
 ): Promise<number> {
+  if (target === undefined) deps.requireTty(); // the picker needs a terminal; fail before any AWS call
   const ctx = await deps.resolveContext({ profile: opts.profile, region: opts.region });
   const history = await deps.loadHistory(deps.configDir);
   const recentIds = recentInstanceIds(history, ctx.profile, ctx.region);

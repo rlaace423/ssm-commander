@@ -42,6 +42,7 @@ function makeDeps(over: Partial<ConnectDeps> = {}): ConnectDeps {
     warn: vi.fn(),
     info: vi.fn(),
     spinner: () => ({ stop() {}, fail() {} }),
+    requireTty: vi.fn(),
     ...over,
   };
 }
@@ -110,6 +111,17 @@ describe('runConnect', () => {
       'No connectable instances (1 listed); run without --connectable to see them',
     );
     expect(deps.pickInstance).not.toHaveBeenCalled();
+  });
+
+  test('checks for a TTY before any AWS call when no target is given', async () => {
+    const deps = makeDeps({
+      requireTty: () => {
+        throw new CliError('no tty');
+      },
+    });
+    await expect(runConnect(undefined, {}, deps)).rejects.toThrow('no tty');
+    expect(deps.resolveContext).not.toHaveBeenCalled();
+    await runConnect('i-1', {}, deps); // an explicit target needs no terminal
   });
 
   test('tells the user and opens the picker when the target is not found', async () => {

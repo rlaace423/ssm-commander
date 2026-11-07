@@ -10,7 +10,9 @@ describe('describeAwsError', () => {
     const e = describeAwsError(named('CredentialsProviderError'), ctx);
     expect(e).toBeInstanceOf(CliError);
     expect(e.message).toBe('Could not load credentials for profile "work"');
-    expect(e.hint).toBe('Check ~/.aws/credentials and ~/.aws/config');
+    expect(e.hint).toBe('CredentialsProviderError happened');
+    const silent = describeAwsError(Object.assign(new Error(''), { name: 'CredentialsProviderError' }), ctx);
+    expect(silent.hint).toBe('Check ~/.aws/credentials and ~/.aws/config');
   });
 
   test.each(['UnrecognizedClientException', 'InvalidClientTokenId', 'AuthFailure', 'InvalidSignatureException'])(

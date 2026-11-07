@@ -16,6 +16,7 @@ import { configDir } from '../storage/paths.js';
 import type { AwsContext, InstanceRow } from '../types.js';
 import { pickInstance } from '../ui/instance-picker.js';
 import { info, type Spinner, spinner } from '../ui/output.js';
+import { requireTty } from '../ui/prompts.js';
 import { fetchInstances } from './connect.js';
 import { selectInstance } from './select-instance.js';
 
@@ -41,6 +42,7 @@ export interface SshDeps {
   selfCommand: () => string[];
   info: (message: string) => void;
   spinner: (text: string) => Spinner;
+  requireTty: () => void;
 }
 
 export function defaultSshDeps(): SshDeps {
@@ -54,6 +56,7 @@ export function defaultSshDeps(): SshDeps {
     selfCommand: () => selfCommand(),
     info,
     spinner,
+    requireTty: () => requireTty(),
   };
 }
 
@@ -64,6 +67,7 @@ export async function prepareTarget(
   message: string,
   deps: SshDeps,
 ): Promise<{ ctx: AwsContext; row: InstanceRow; proxyCommand: string }> {
+  if (target === undefined) deps.requireTty(); // the picker needs a terminal; fail before any AWS call
   const ctx = await deps.resolveContext({ profile: opts.profile, region: opts.region });
   const recentIds = recentInstanceIds(await deps.loadHistory(deps.configDir), ctx.profile, ctx.region);
   const { rows } = await fetchInstances(ctx, recentIds, deps);

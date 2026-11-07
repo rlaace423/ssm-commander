@@ -17,9 +17,10 @@ function makeDeps(over: Partial<DoctorDeps> = {}): DoctorDeps {
       credentialsFile: { default: { aws_access_key_id: 'x' }, work: {} },
       configFile: { default: { region: 'ap-northeast-2' } },
     }),
-    resolveContext: async () => ctx,
+    resolveContext: vi.fn(async () => ctx),
     getCallerIdentity: async () => ({ Account: '123456789012', Arn: 'arn:aws:iam::123456789012:user/sam' }),
     writeStdout: vi.fn(),
+    env: {},
     ...over,
   };
 }
@@ -71,6 +72,18 @@ describe('runDoctorChecks', () => {
       makeDeps({ loadSharedConfig: async () => ({ credentialsFile: {}, configFile: {} }) }),
     );
     expect(files?.ok).toBe(false);
+  });
+
+  test('resolves the region itself (profile config, else us-east-1) so the check never prompts', async () => {
+    const deps = makeDeps();
+    await runDoctorChecks({ profile: 'default' }, deps);
+    expect(deps.resolveContext).toHaveBeenCalledWith({ profile: 'default', region: 'ap-northeast-2' });
+    const noRegion = makeDeps();
+    await runDoctorChecks({ profile: 'work' }, noRegion);
+    expect(noRegion.resolveContext).toHaveBeenCalledWith({ profile: 'work', region: 'us-east-1' });
+    const fromEnv = makeDeps({ env: { AWS_REGION: 'eu-west-1' } });
+    await runDoctorChecks({ profile: 'work' }, fromEnv);
+    expect(fromEnv.resolveContext).toHaveBeenCalledWith({ profile: 'work', region: 'eu-west-1' });
   });
 
   test('credentials failure is reported with the mapped message', async () => {

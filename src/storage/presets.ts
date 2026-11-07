@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { CliError } from '../errors.js';
 import { readJsonFile, writeJsonFile } from './paths.js';
 
 export interface ForwardPreset {
@@ -38,7 +39,14 @@ export function findPreset(file: PresetsFile, name: string): ForwardPreset | und
 }
 
 export async function loadPresets(dir: string): Promise<PresetsFile> {
-  const data = await readJsonFile<PresetsFile>(join(dir, FILE_NAME));
+  const path = join(dir, FILE_NAME);
+  let data: PresetsFile | null;
+  try {
+    data = await readJsonFile<PresetsFile>(path);
+  } catch (err) {
+    if (!(err instanceof SyntaxError)) throw err;
+    throw new CliError(`Could not read ${path}: ${err.message}`, 'Fix or delete the file and try again');
+  }
   if (data?.version !== 1 || !Array.isArray(data.presets)) return emptyPresets();
   return data;
 }

@@ -2,6 +2,7 @@ import { filterConnectable, listInstances } from '../aws/instances.js';
 import { resolveContext } from '../context.js';
 import { CliError, describeAwsError, IAM_ACTIONS } from '../errors.js';
 import { defaultRunSessionDeps, runSession } from '../session/run-session.js';
+import { type HistoryFile, loadHistory, recentInstanceIds } from '../storage/history.js';
 import { configDir } from '../storage/paths.js';
 import {
   type ForwardPreset,
@@ -72,6 +73,7 @@ export interface ForwardDeps {
   info: (message: string) => void;
   writeStdout: (text: string) => void;
   spinner: (text: string) => Spinner;
+  loadHistory: (dir: string) => Promise<HistoryFile>;
 }
 
 export function defaultForwardDeps(): ForwardDeps {
@@ -91,6 +93,7 @@ export function defaultForwardDeps(): ForwardDeps {
       process.stdout.write(text);
     },
     spinner,
+    loadHistory,
   };
 }
 
@@ -154,6 +157,7 @@ export async function runForward(
   }
   const remotePortOption = parsePortOption(opts.remotePort);
   const localPortOption = parsePortOption(opts.localPort);
+  if (preset === undefined && opts.target === undefined) deps.requireTty(); // the picker needs a terminal
 
   const ctx = await deps.resolveContext({
     profile: opts.profile ?? preset?.profile,
@@ -164,13 +168,14 @@ export async function runForward(
   if (preset !== undefined && opts.target === undefined) {
     instance = { instanceId: preset.instanceId, name: preset.instanceName };
   } else {
-    const { rows } = await fetchInstances(ctx, [], deps);
+    const recentIds = recentInstanceIds(await deps.loadHistory(deps.configDir), ctx.profile, ctx.region);
+    const { rows } = await fetchInstances(ctx, recentIds, deps);
     const pickRows = opts.connectable ? filterConnectable(rows) : rows;
     const row = await selectInstance(
       opts.target,
       rows,
       pickRows,
-      { message: 'Select an instance to forward through', recentIds: [] },
+      { message: 'Select an instance to forward through', recentIds },
       deps,
     );
     instance = { instanceId: row.instanceId, name: row.name };
@@ -211,7 +216,11 @@ export async function runForward(
     );
 
   if (opts.save !== undefined) {
-    const overwrite = findPreset(presets, opts.save) === undefined ? true : await deps.confirmOverwrite(opts.save);
+    let overwrite = true;
+    if (findPreset(presets, opts.save) !== undefined) {
+      deps.requireTty();
+      overwrite = await deps.confirmOverwrite(opts.save);
+    }
     if (overwrite) {
       const saved: ForwardPreset = {
         name: opts.save,

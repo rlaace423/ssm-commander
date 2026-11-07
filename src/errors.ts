@@ -45,7 +45,12 @@ export function describeAwsError(err: unknown, ctx: { profile: string; action?: 
   const profile = `profile "${ctx.profile}"`;
 
   if (name === 'CredentialsProviderError') {
-    return new CliError(`Could not load credentials for ${profile}`, 'Check ~/.aws/credentials and ~/.aws/config');
+    // the provider's own message usually says exactly what is missing or expired; keep it as the hint
+    const detail = e.message?.trim();
+    return new CliError(
+      `Could not load credentials for ${profile}`,
+      detail || 'Check ~/.aws/credentials and ~/.aws/config',
+    );
   }
   if (REJECTED_CREDENTIALS.includes(name)) return new CliError(`AWS rejected the credentials of ${profile}`);
   if (EXPIRED_CREDENTIALS.includes(name)) return new CliError(`The credentials of ${profile} have expired`);

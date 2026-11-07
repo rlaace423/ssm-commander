@@ -51,6 +51,7 @@ function makeDeps(over: Partial<SshDeps> = {}): SshDeps {
     selfCommand: () => ['/node', '/cli.mjs'],
     info: vi.fn(),
     spinner: () => ({ stop() {}, fail() {} }),
+    requireTty: vi.fn(),
     ...over,
   };
 }
@@ -72,13 +73,14 @@ describe('runSsh', () => {
     expect(deps.pickInstance).not.toHaveBeenCalled();
   });
 
-  test('opens the picker when no target is given and propagates the TTY error', async () => {
+  test('requires a TTY before any AWS call when no target is given', async () => {
     const deps = makeDeps({
-      pickInstance: vi.fn(async () => {
+      requireTty: () => {
         throw new CliError('This command needs an interactive terminal; pass --profile/--region/target explicitly');
-      }),
+      },
     });
     await expect(runSsh([], {}, deps)).rejects.toThrow('needs an interactive terminal');
+    expect(deps.resolveContext).not.toHaveBeenCalled();
     expect(deps.spawn).not.toHaveBeenCalled();
   });
 

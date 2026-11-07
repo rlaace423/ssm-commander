@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { warn } from '../ui/output.js';
 import { readJsonFile, writeJsonFile } from './paths.js';
 
 export interface HistoryEntry {
@@ -39,8 +40,17 @@ export function recentInstanceIds(file: HistoryFile, profile: string, region: st
   return file.entries.filter((e) => e.profile === profile && e.region === region).map((e) => e.instanceId);
 }
 
-export async function loadHistory(dir: string): Promise<HistoryFile> {
-  const data = await readJsonFile<HistoryFile>(join(dir, FILE_NAME));
+/** History is a convenience: an unreadable file is reported and ignored rather than blocking the command. */
+export async function loadHistory(dir: string, deps: { warn?: (message: string) => void } = {}): Promise<HistoryFile> {
+  const path = join(dir, FILE_NAME);
+  let data: HistoryFile | null;
+  try {
+    data = await readJsonFile<HistoryFile>(path);
+  } catch (err) {
+    if (!(err instanceof SyntaxError)) throw err;
+    (deps.warn ?? warn)(`Ignoring unreadable ${path}: ${err.message}`);
+    return emptyHistory();
+  }
   if (data?.version !== 1 || !Array.isArray(data.entries)) return emptyHistory();
   return data;
 }

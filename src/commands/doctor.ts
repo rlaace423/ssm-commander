@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { GetCallerIdentityCommand } from '@aws-sdk/client-sts';
 import type { SharedConfigFiles } from '@smithy/types';
 import { createStsClient } from '../aws/clients.js';
-import { listProfileNames, loadSharedConfig } from '../aws/profiles.js';
+import { listProfileNames, loadSharedConfig, profileRegion, resolveRegion } from '../aws/profiles.js';
 import { resolveContext } from '../context.js';
 import { describeAwsError, PLUGIN_INSTALL_URL } from '../errors.js';
 import { compareVersions, findPluginPath, getPluginVersion, RECOMMENDED_MIN_VERSION } from '../session/plugin.js';
@@ -19,9 +19,10 @@ export interface DoctorDeps {
   findPluginPath: () => string | null;
   getPluginVersion: (pluginPath: string) => Promise<string | null>;
   loadSharedConfig: () => Promise<SharedConfigFiles>;
-  resolveContext: (opts: { profile?: string }) => Promise<AwsContext>;
+  resolveContext: (opts: { profile?: string; region?: string }) => Promise<AwsContext>;
   getCallerIdentity: (ctx: AwsContext) => Promise<{ Account?: string; Arn?: string }>;
   writeStdout: (text: string) => void;
+  env: NodeJS.ProcessEnv;
 }
 
 const MIN_NODE_MAJOR = 22;
@@ -37,6 +38,7 @@ export function defaultDoctorDeps(): DoctorDeps {
     writeStdout: (text) => {
       process.stdout.write(text);
     },
+    env: process.env,
   };
 }
 
@@ -61,9 +63,9 @@ async function checkPlugin(deps: DoctorDeps): Promise<DoctorCheck> {
   };
 }
 
-async function checkConfigFiles(deps: DoctorDeps): Promise<DoctorCheck> {
+function checkConfigFiles(files: SharedConfigFiles): DoctorCheck {
   const name = 'AWS config files';
-  const profiles = listProfileNames(await deps.loadSharedConfig());
+  const profiles = listProfileNames(files);
   if (profiles.length === 0) {
     return { name, ok: false, detail: 'no profiles found in ~/.aws/config or ~/.aws/credentials' };
   }
@@ -74,10 +76,14 @@ async function checkConfigFiles(deps: DoctorDeps): Promise<DoctorCheck> {
   };
 }
 
-async function checkCredentials(profile: string, deps: DoctorDeps): Promise<DoctorCheck> {
+/** STS works in any region, so the check never prompts for one. */
+const FALLBACK_REGION = 'us-east-1';
+
+async function checkCredentials(profile: string, files: SharedConfigFiles, deps: DoctorDeps): Promise<DoctorCheck> {
   const name = `Credentials for "${profile}"`;
   try {
-    const ctx = await deps.resolveContext({ profile });
+    const region = resolveRegion({ env: deps.env, profileRegion: profileRegion(files, profile) }) ?? FALLBACK_REGION;
+    const ctx = await deps.resolveContext({ profile, region });
     const identity = await deps.getCallerIdentity(ctx);
     return { name, ok: true, detail: `account ${identity.Account ?? '?'}, ${identity.Arn ?? 'unknown identity'}` };
   } catch (err) {
@@ -86,8 +92,9 @@ async function checkCredentials(profile: string, deps: DoctorDeps): Promise<Doct
 }
 
 export async function runDoctorChecks(opts: { profile?: string }, deps: DoctorDeps): Promise<DoctorCheck[]> {
-  const checks = [checkNode(deps.nodeVersion), await checkPlugin(deps), await checkConfigFiles(deps)];
-  if (opts.profile) checks.push(await checkCredentials(opts.profile, deps));
+  const files = await deps.loadSharedConfig();
+  const checks = [checkNode(deps.nodeVersion), await checkPlugin(deps), checkConfigFiles(files)];
+  if (opts.profile) checks.push(await checkCredentials(opts.profile, files, deps));
   return checks;
 }
 

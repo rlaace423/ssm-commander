@@ -1,7 +1,8 @@
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
+import { CliError } from '../../src/errors.js';
 import {
   emptyPresets,
   type ForwardPreset,
@@ -52,6 +53,13 @@ describe('findPreset', () => {
 });
 
 describe('loadPresets / savePresets', () => {
+  test('loadPresets fails with a CliError that names the file when it is corrupt', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ssmc-'));
+    await writeFile(join(dir, 'presets.json'), '{ nope');
+    await expect(loadPresets(dir)).rejects.toBeInstanceOf(CliError);
+    await expect(loadPresets(dir)).rejects.toThrow(join(dir, 'presets.json'));
+  });
+
   test('loadPresets returns emptyPresets() when missing; savePresets/loadPresets round-trip', async () => {
     const dir = join(await mkdtemp(join(tmpdir(), 'ssmc-')), 'home');
     expect(await loadPresets(dir)).toEqual(emptyPresets());

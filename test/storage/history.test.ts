@@ -1,7 +1,7 @@
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import {
   emptyHistory,
   HISTORY_LIMIT,
@@ -65,6 +65,15 @@ describe('loadHistory / saveHistory', () => {
     const dir = await tmp();
     await writeFile(join(dir, 'history.json'), JSON.stringify({ version: 99, entries: [{ bogus: true }] }));
     expect(await loadHistory(dir)).toEqual(emptyHistory());
+  });
+
+  test('loadHistory warns with the file path and continues with an empty history when the file is corrupt', async () => {
+    const dir = await tmp();
+    await writeFile(join(dir, 'history.json'), '{ definitely not json');
+    const warn = vi.fn();
+    expect(await loadHistory(dir, { warn })).toEqual(emptyHistory());
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toContain(join(dir, 'history.json'));
   });
 
   test('saveHistory then loadHistory round-trips in a temp dir', async () => {

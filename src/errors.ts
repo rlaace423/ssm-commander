@@ -26,6 +26,29 @@ export const IAM_ACTIONS = {
   ssmTerminate: 'ssm:TerminateSession',
 } as const;
 
+export const ECS_IAM_ACTIONS = {
+  listClusters: 'ecs:ListClusters',
+  describeClusters: 'ecs:DescribeClusters',
+  listServices: 'ecs:ListServices',
+  describeServices: 'ecs:DescribeServices',
+  listTasks: 'ecs:ListTasks',
+  describeTasks: 'ecs:DescribeTasks',
+  execute: 'ecs:ExecuteCommand',
+} as const;
+
+/** A denied call; commands with a fully specified target can carry on without the listing. */
+export class AccessDeniedError extends CliError {
+  constructor(message: string, hint?: string) {
+    super(message, hint);
+    this.name = 'AccessDeniedError';
+  }
+}
+
+function requiredActions(action: string | undefined): string {
+  const family = action?.startsWith('ecs:') ? ECS_IAM_ACTIONS : IAM_ACTIONS;
+  return `Required IAM actions: ${Object.values(family).join(', ')}`;
+}
+
 const REJECTED_CREDENTIALS = [
   'UnrecognizedClientException',
   'InvalidClientTokenId',
@@ -55,15 +78,27 @@ export function describeAwsError(err: unknown, ctx: { profile: string; action?: 
   if (REJECTED_CREDENTIALS.includes(name)) return new CliError(`AWS rejected the credentials of ${profile}`);
   if (EXPIRED_CREDENTIALS.includes(name)) return new CliError(`The credentials of ${profile} have expired`);
   if (ACCESS_DENIED.includes(name)) {
-    return new CliError(
+    return new AccessDeniedError(
       `Profile "${ctx.profile}" is not allowed to perform ${ctx.action ?? 'this operation'}`,
-      `Required IAM actions: ${Object.values(IAM_ACTIONS).join(', ')}`,
+      requiredActions(ctx.action),
     );
   }
   if (name === 'TargetNotConnected') {
     return new CliError(
       'The instance is not connected to Systems Manager',
       'Check that the SSM agent is running and the instance profile allows Session Manager',
+    );
+  }
+  if (name === 'TargetNotConnectedException') {
+    return new CliError(
+      'The container is not reachable through ECS Exec',
+      'Check that the task role allows ssmmessages:CreateControlChannel, CreateDataChannel, OpenControlChannel and OpenDataChannel, and that the ExecuteCommandAgent is running',
+    );
+  }
+  if (name === 'InvalidParameterException' && /execute command/i.test(e.message ?? '')) {
+    return new CliError(
+      'ECS Exec is not enabled for this task',
+      'Start the service or task with enableExecuteCommand (for a service: aws ecs update-service --enable-execute-command --force-new-deployment) and wait for the agent to come up',
     );
   }
   if (NETWORK_CODES.includes(code) || name === 'TimeoutError') {

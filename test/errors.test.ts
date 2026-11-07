@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'vitest';
-import { CliError, describeAwsError, formatError, IAM_ACTIONS } from '../src/errors.js';
+import {
+  AccessDeniedError,
+  CliError,
+  describeAwsError,
+  ECS_IAM_ACTIONS,
+  formatError,
+  IAM_ACTIONS,
+} from '../src/errors.js';
 
 const named = (name: string) => Object.assign(new Error(`${name} happened`), { name });
 const coded = (code: string) => Object.assign(new Error(`${code} happened`), { code });
@@ -77,5 +84,48 @@ describe('formatError', () => {
     expect(formatError(plain, false)).toBe('Unexpected error: kaboom');
     expect(formatError(plain, true)).toMatch(/^Unexpected error: kaboom\nError: kaboom\n {4}at /);
     expect(formatError('just text', false)).toBe('Unexpected error: just text');
+  });
+});
+
+describe('describeAwsError for ECS', () => {
+  test('access denied is an AccessDeniedError whose hint lists only the ECS actions for an ECS action', () => {
+    const e = describeAwsError(named('AccessDeniedException'), {
+      profile: 'work',
+      action: ECS_IAM_ACTIONS.listClusters,
+    });
+    expect(e).toBeInstanceOf(AccessDeniedError);
+    expect(e.message).toContain('ecs:ListClusters');
+    expect(e.hint).toContain('ecs:ExecuteCommand');
+    expect(e.hint).not.toContain('ec2:DescribeInstances');
+  });
+
+  test('access denied for an EC2 action keeps the EC2/SSM action list', () => {
+    const e = describeAwsError(named('UnauthorizedOperation'), { profile: 'work', action: IAM_ACTIONS.ec2Describe });
+    expect(e).toBeInstanceOf(AccessDeniedError);
+    expect(e.hint).toContain('ec2:DescribeInstances');
+    expect(e.hint).not.toContain('ecs:');
+  });
+
+  test('TargetNotConnectedException points at the task role and the exec agent', () => {
+    const e = describeAwsError(named('TargetNotConnectedException'), ctx);
+    expect(e.message).toBe('The container is not reachable through ECS Exec');
+    expect(e.hint).toContain('ssmmessages');
+  });
+
+  test('InvalidParameterException about execute command explains enableExecuteCommand', () => {
+    const err = Object.assign(
+      new Error(
+        'The execute command failed because execute command was not enabled when the task was run or the execute command agent isn’t running. Wait and try again or run a new task with execute command enabled and try again.',
+      ),
+      { name: 'InvalidParameterException' },
+    );
+    const e = describeAwsError(err, ctx);
+    expect(e.message).toBe('ECS Exec is not enabled for this task');
+    expect(e.hint).toContain('enableExecuteCommand');
+  });
+
+  test('other InvalidParameterExceptions keep their message', () => {
+    const e = describeAwsError(named('InvalidParameterException'), ctx);
+    expect(e.message).toBe('InvalidParameterException happened');
   });
 });

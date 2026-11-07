@@ -34,8 +34,10 @@ export function defaultRunSessionDeps(ctx: AwsContext): RunSessionDeps {
   };
 }
 
-/** StartSession → plugin → TerminateSession. The plugin is located first so a missing plugin never leaves a session behind. */
-export async function runSession(ctx: AwsContext, input: StartSessionInput, deps: RunSessionDeps): Promise<number> {
+/** Locates the plugin and reads its version (warning when it is old) before any session is started. */
+export async function preparePlugin(
+  deps: Pick<RunSessionDeps, 'findPluginPath' | 'getPluginVersion' | 'warn'>,
+): Promise<{ pluginPath: string; pluginVersion: string | null }> {
   const pluginPath = deps.findPluginPath();
   if (pluginPath === null) throw new PluginNotFoundError();
 
@@ -45,6 +47,12 @@ export async function runSession(ctx: AwsContext, input: StartSessionInput, deps
       `session-manager-plugin ${pluginVersion} is older than the recommended ${RECOMMENDED_MIN_VERSION}; consider updating`,
     );
   }
+  return { pluginPath, pluginVersion };
+}
+
+/** StartSession → plugin → TerminateSession. The plugin is located first so a missing plugin never leaves a session behind. */
+export async function runSession(ctx: AwsContext, input: StartSessionInput, deps: RunSessionDeps): Promise<number> {
+  const { pluginPath, pluginVersion } = await preparePlugin(deps);
 
   const session = await startSession(deps.ssm, input);
   try {

@@ -4,6 +4,7 @@ import { Command, CommanderError, InvalidArgumentError } from 'commander';
 import pkg from '../package.json' with { type: 'json' };
 import { type ConnectDeps, runConnect } from './commands/connect.js';
 import { runDoctor } from './commands/doctor.js';
+import { type ExecDeps, type ExecOptions, runExec } from './commands/exec.js';
 import { type ForwardDeps, type ForwardOptions, runForward, validatePort } from './commands/forward.js';
 import { type ProxyOptions, runProxy } from './commands/proxy.js';
 import { runScp } from './commands/scp.js';
@@ -18,6 +19,7 @@ export interface ProgramDeps {
   forward?: ForwardDeps;
   ssh?: SshDeps;
   scp?: SshDeps;
+  exec?: ExecDeps;
 }
 
 export function createProgram(deps: ProgramDeps = {}): Command {
@@ -38,6 +40,22 @@ export function createProgram(deps: ProgramDeps = {}): Command {
     .option('--connectable', 'list only instances that can be connected right now')
     .action(async (target: string | undefined, opts: { profile?: string; region?: string; connectable?: boolean }) => {
       lastExitCode = await runConnect(target, opts, deps.connect);
+    });
+
+  program
+    .command('exec')
+    .description('Open an interactive shell in an ECS container through ECS Exec')
+    .argument('[target]', 'service, cluster/service or cluster/service/task-id; omit to pick from lists')
+    .option('-p, --profile <profile>', 'AWS profile (defaults to AWS_PROFILE, then a prompt)')
+    .option('-r, --region <region>', 'AWS region (defaults to the profile region, then a prompt)')
+    .option('--cluster <name>', 'ECS cluster')
+    .option('--service <name>', 'ECS service')
+    .option('--task <id>', 'task id; with --cluster no listing is needed')
+    .option('--container <name>', 'container name (asked when the task has several)')
+    .option('--command <command>', 'command to run in the container (default: /bin/sh)')
+    .option('--connectable', 'list only clusters, services and tasks that can be reached right now')
+    .action(async (target: string | undefined, opts: ExecOptions) => {
+      lastExitCode = await runExec(target, opts, deps.exec);
     });
 
   program

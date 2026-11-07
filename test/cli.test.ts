@@ -32,6 +32,23 @@ describe('createProgram', () => {
     expect(program.options.map((o) => o.long)).toContain('--debug');
   });
 
+  test('registers exec with the ECS options', () => {
+    const exec = createProgram().commands.find((c) => c.name() === 'exec');
+    expect(exec).toBeDefined();
+    expect(exec?.options.map((o) => o.long)).toEqual(
+      expect.arrayContaining([
+        '--profile',
+        '--region',
+        '--cluster',
+        '--service',
+        '--task',
+        '--container',
+        '--command',
+        '--connectable',
+      ]),
+    );
+  });
+
   test('registers ssh and scp with pass-through and a hidden proxy command', () => {
     const program = createProgram();
     for (const name of ['ssh', 'scp']) {

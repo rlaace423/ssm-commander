@@ -3,6 +3,7 @@ import { createSsmClient } from '../aws/clients.js';
 import { ssmEndpoint, startSession, terminateSession } from '../aws/session.js';
 import { PluginNotFoundError } from '../errors.js';
 import type { AwsContext, Sender, StartSessionInput } from '../types.js';
+import { warn } from '../ui/output.js';
 import {
   buildPluginInvocation,
   compareVersions,
@@ -28,7 +29,7 @@ export function defaultRunSessionDeps(ctx: AwsContext): RunSessionDeps {
     findPluginPath: () => findPluginPath({ env: process.env, platform: process.platform, exists: existsSync }),
     getPluginVersion,
     runPlugin: (pluginPath, invocation) => runPlugin(pluginPath, invocation),
-    warn: (message) => process.stderr.write(`Warning: ${message}\n`),
+    warn,
     env: process.env,
   };
 }

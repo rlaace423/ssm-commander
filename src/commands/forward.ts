@@ -1,3 +1,4 @@
+import { buildExecTarget, type ExecTarget, isEcsTarget, parseEcsTarget, STANDALONE_SERVICE } from '../aws/ecs.js';
 import { filterConnectable, listInstances } from '../aws/instances.js';
 import { resolveContext } from '../context.js';
 import { CliError, describeAwsError, IAM_ACTIONS } from '../errors.js';
@@ -5,10 +6,12 @@ import { defaultRunSessionDeps, runSession } from '../session/run-session.js';
 import { type HistoryFile, loadHistory, recentInstanceIds } from '../storage/history.js';
 import { configDir } from '../storage/paths.js';
 import {
+  type EcsPreset,
   type ForwardPreset,
   findPreset,
   loadPresets,
   type PresetsFile,
+  presetKind,
   removePreset,
   savePresets,
   upsertPreset,
@@ -20,6 +23,7 @@ import { info, type Spinner, spinner, warn } from '../ui/output.js';
 import { confirmOverwrite, promptIo, requireTty } from '../ui/prompts.js';
 import { createTable } from '../ui/table.js';
 import { fetchInstances } from './connect.js';
+import { defaultEcsSelectionDeps, type EcsSelectionDeps, selectEcsContainer } from './exec.js';
 import { rowsOrTrustedId, selectInstance } from './select-instance.js';
 
 export const FORWARD_DOCUMENT = 'AWS-StartPortForwardingSessionToRemoteHost';
@@ -30,14 +34,15 @@ export function validatePort(text: string): true | string {
   return /^\d+$/.test(text) && port >= 1 && port <= 65535 ? true : PORT_ERROR;
 }
 
+/** `target` is an instance id or, for an ECS hop, the plugin's `ecs:<cluster>_<task>_<runtimeId>` form. */
 export function buildForwardSessionInput(
-  instanceId: string,
+  target: string,
   remoteHost: string,
   remotePort: number,
   localPort: number,
 ): StartSessionInput {
   return {
-    Target: instanceId,
+    Target: target,
     DocumentName: FORWARD_DOCUMENT,
     Parameters: { host: [remoteHost], portNumber: [String(remotePort)], localPortNumber: [String(localPort)] },
   };
@@ -47,6 +52,8 @@ export interface ForwardOptions {
   profile?: string;
   region?: string;
   target?: string;
+  ecs?: boolean;
+  container?: string;
   remoteHost?: string;
   remotePort?: string;
   localPort?: string;
@@ -63,6 +70,7 @@ export interface ForwardDeps {
     opts: { recentIds: string[]; connectableOnly: boolean },
   ) => Promise<{ rows: InstanceRow[]; ssmUnavailable: boolean }>;
   pickInstance: (rows: InstanceRow[], opts: { message: string; recentIds: string[] }) => Promise<InstanceRow>;
+  ecs: EcsSelectionDeps;
   runSession: (ctx: AwsContext, input: StartSessionInput) => Promise<number>;
   loadPresets: (dir: string) => Promise<PresetsFile>;
   savePresets: (dir: string, file: PresetsFile) => Promise<void>;
@@ -82,6 +90,7 @@ export function defaultForwardDeps(): ForwardDeps {
     resolveContext: (opts) => resolveContext(opts),
     listInstances: (ctx, opts) => listInstances(ctx, opts),
     pickInstance,
+    ecs: defaultEcsSelectionDeps(),
     runSession: (ctx, input) => runSession(ctx, input, defaultRunSessionDeps(ctx)),
     loadPresets,
     savePresets,
@@ -106,6 +115,12 @@ function parsePortOption(value: string | undefined): number | undefined {
   return Number(value);
 }
 
+function describeHop(preset: ForwardPreset): string {
+  return preset.kind === 'ecs'
+    ? `ecs:${preset.cluster}/${preset.service ?? STANDALONE_SERVICE}`
+    : `${preset.instanceName ?? preset.instanceId} (${preset.instanceId})`;
+}
+
 export function renderPresetList(file: PresetsFile): string {
   if (file.presets.length === 0) return 'No presets saved\n';
   const table = createTable(
@@ -113,25 +128,88 @@ export function renderPresetList(file: PresetsFile): string {
       { key: 'name', header: 'Name' },
       { key: 'profile', header: 'Profile' },
       { key: 'region', header: 'Region' },
-      { key: 'instance', header: 'Instance' },
+      { key: 'through', header: 'Through' },
       { key: 'forward', header: 'Forward' },
     ],
     file.presets,
     (preset, key) => {
       switch (key) {
-        case 'instance':
-          return `${preset.instanceName ?? preset.instanceId} (${preset.instanceId})`;
+        case 'through':
+          return describeHop(preset);
         case 'forward':
           return `${preset.remoteHost}:${preset.remotePort} -> ${preset.localPort}`;
         default:
-          return String(preset[key as keyof ForwardPreset] ?? '');
+          return String(preset[key as 'name' | 'profile' | 'region']);
       }
     },
   );
   return `${[table.header, ...table.lines.map((line) => line.text), table.footer].join('\n')}\n`;
 }
 
-/** Port forwarding through an instance, optionally driven by or saved as a named preset. */
+/** What the tunnel goes through, resolved from the command line, the picker or a preset. */
+type Hop =
+  | { kind: 'ec2'; instanceId: string; name: string | null }
+  | {
+      kind: 'ecs';
+      cluster: string;
+      service: string | null;
+      taskId: string;
+      container: string;
+      runtimeId: string;
+      /** The container name worth saving in a preset: only when it was chosen among several. */
+      savedContainer: string | null;
+    };
+
+async function ec2Hop(ctx: AwsContext, opts: ForwardOptions, deps: ForwardDeps): Promise<Hop> {
+  const recentIds = recentInstanceIds(await deps.loadHistory(deps.configDir), ctx.profile, ctx.region);
+  const listing = await rowsOrTrustedId(opts.target, () => fetchInstances(ctx, recentIds, deps), deps.warn);
+  const pickRows = opts.connectable ? filterConnectable(listing.rows) : listing.rows;
+  const row =
+    listing.trusted ??
+    (await selectInstance(
+      opts.target,
+      listing.rows,
+      pickRows,
+      { message: 'Select an instance to forward through', recentIds },
+      deps,
+    ));
+  return { kind: 'ec2', instanceId: row.instanceId, name: row.name };
+}
+
+async function ecsHop(
+  ctx: AwsContext,
+  preset: EcsPreset | undefined,
+  opts: ForwardOptions,
+  deps: ForwardDeps,
+): Promise<Hop> {
+  let want: ExecTarget = {};
+  if (opts.target !== undefined && isEcsTarget(opts.target)) want = parseEcsTarget(opts.target);
+  else if (preset !== undefined) want = { cluster: preset.cluster, service: preset.service ?? STANDALONE_SERVICE };
+
+  const ecs = await deps.ecs.ecsClient(ctx);
+  const { task, container } = await selectEcsContainer(
+    ecs,
+    want,
+    {
+      connectableOnly: opts.connectable === true,
+      container: opts.container ?? preset?.container ?? undefined,
+      auto: preset !== undefined,
+    },
+    { spinner: deps.spinner, info: deps.info, profile: ctx.profile },
+    deps.ecs,
+  );
+  return {
+    kind: 'ecs',
+    cluster: task.cluster,
+    service: task.service,
+    taskId: task.taskId,
+    container: container.name,
+    runtimeId: container.runtimeId,
+    savedContainer: opts.container ?? (task.containers.length > 1 ? container.name : null),
+  };
+}
+
+/** Port forwarding through an instance or an ECS task, optionally driven by or saved as a named preset. */
 export async function runForward(
   presetName: string | undefined,
   opts: ForwardOptions,
@@ -159,6 +237,10 @@ export async function runForward(
   }
   const remotePortOption = parsePortOption(opts.remotePort);
   const localPortOption = parsePortOption(opts.localPort);
+  const viaEcs =
+    preset !== undefined
+      ? presetKind(preset) === 'ecs'
+      : opts.ecs === true || (opts.target !== undefined && isEcsTarget(opts.target));
   if (preset === undefined && opts.target === undefined) deps.requireTty(); // the picker needs a terminal
 
   const ctx = await deps.resolveContext({
@@ -166,23 +248,13 @@ export async function runForward(
     region: opts.region ?? preset?.region,
   });
 
-  let instance: { instanceId: string; name: string | null };
-  if (preset !== undefined && opts.target === undefined) {
-    instance = { instanceId: preset.instanceId, name: preset.instanceName };
+  let hop: Hop;
+  if (viaEcs) {
+    hop = await ecsHop(ctx, preset?.kind === 'ecs' ? preset : undefined, opts, deps);
+  } else if (preset !== undefined && preset.kind !== 'ecs' && opts.target === undefined) {
+    hop = { kind: 'ec2', instanceId: preset.instanceId, name: preset.instanceName };
   } else {
-    const recentIds = recentInstanceIds(await deps.loadHistory(deps.configDir), ctx.profile, ctx.region);
-    const listing = await rowsOrTrustedId(opts.target, () => fetchInstances(ctx, recentIds, deps), deps.warn);
-    const pickRows = opts.connectable ? filterConnectable(listing.rows) : listing.rows;
-    const row =
-      listing.trusted ??
-      (await selectInstance(
-        opts.target,
-        listing.rows,
-        pickRows,
-        { message: 'Select an instance to forward through', recentIds },
-        deps,
-      ));
-    instance = { instanceId: row.instanceId, name: row.name };
+    hop = await ec2Hop(ctx, opts, deps);
   }
 
   const knownHost = opts.remoteHost ?? preset?.remoteHost;
@@ -194,7 +266,8 @@ export async function runForward(
     knownHost ??
     (await deps.descriptionInput({
       message: 'Remote service host',
-      description: 'Host of the service to tunnel, as seen from the instance. "localhost" means the instance itself.',
+      description:
+        'Host of the service to tunnel, as seen from the instance or task. "localhost" means the instance or task itself.',
       default: 'localhost',
       required: true,
     }));
@@ -226,25 +299,23 @@ export async function runForward(
       overwrite = await deps.confirmOverwrite(opts.save);
     }
     if (overwrite) {
-      const saved: ForwardPreset = {
-        name: opts.save,
-        profile: ctx.profile,
-        region: ctx.region,
-        instanceId: instance.instanceId,
-        instanceName: instance.name,
-        remoteHost,
-        remotePort,
-        localPort,
-      };
+      const base = { name: opts.save, profile: ctx.profile, region: ctx.region, remoteHost, remotePort, localPort };
+      const saved: ForwardPreset =
+        hop.kind === 'ecs'
+          ? { ...base, kind: 'ecs', cluster: hop.cluster, service: hop.service, container: hop.savedContainer }
+          : { ...base, instanceId: hop.instanceId, instanceName: hop.name };
       await deps.savePresets(deps.configDir, upsertPreset(presets, saved));
     }
   }
 
-  deps.info(
-    `Forwarding localhost:${localPort} -> ${remoteHost}:${remotePort} via ${instance.name ?? instance.instanceId} (${instance.instanceId}). Press Ctrl+C to stop.`,
-  );
+  const via =
+    hop.kind === 'ecs'
+      ? `ECS task ${hop.taskId} (${hop.service ?? 'no service'}, cluster ${hop.cluster})`
+      : `${hop.name ?? hop.instanceId} (${hop.instanceId})`;
+  deps.info(`Forwarding localhost:${localPort} -> ${remoteHost}:${remotePort} via ${via}. Press Ctrl+C to stop.`);
+  const target = hop.kind === 'ecs' ? buildExecTarget(hop.cluster, hop.taskId, hop.runtimeId) : hop.instanceId;
   try {
-    return await deps.runSession(ctx, buildForwardSessionInput(instance.instanceId, remoteHost, remotePort, localPort));
+    return await deps.runSession(ctx, buildForwardSessionInput(target, remoteHost, remotePort, localPort));
   } catch (err) {
     throw describeAwsError(err, { profile: ctx.profile, action: IAM_ACTIONS.ssmStart });
   }

@@ -33,4 +33,7 @@ Linux work well) and, for `exec`, an ECS service with `enableExecuteCommand` on.
 - [ ] `ssm-commander exec -p <profile> <cluster>/<service-without-exec>` fails with `cannot be reached: exec disabled`.
 - [ ] `ssm-commander exec -p <profile> --connectable` skips the services that cannot be reached.
 - [ ] Inside the container shell, Ctrl+C interrupts the remote command (try `sleep 30`).
+- [ ] `ssm-commander forward -p <profile> --target ecs:<cluster>/<service> --remote-host localhost --remote-port <container-port> --local-port 18080 --save t2`
+  opens the tunnel; `curl localhost:18080` answers from the container; Ctrl+C stops it; `ssm-commander forward t2`
+  runs again without prompts and names the task it went through.
 - [ ] After every session no `session-manager-plugin` process is left behind (`pgrep session-manager-plugin`).

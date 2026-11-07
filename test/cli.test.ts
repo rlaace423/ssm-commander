@@ -73,6 +73,11 @@ describe('createProgram', () => {
     expect(doctor?.options.map((o) => o.long)).toEqual(['--profile']);
   });
 
+  test('registers the ECS options of forward', () => {
+    const forward = createProgram().commands.find((c) => c.name() === 'forward');
+    expect(forward?.options.map((o) => o.long)).toEqual(expect.arrayContaining(['--ecs', '--container']));
+  });
+
   test('registers forward with preset management options', () => {
     const forward = createProgram().commands.find((c) => c.name() === 'forward');
     expect(forward?.options.map((o) => o.long)).toEqual(

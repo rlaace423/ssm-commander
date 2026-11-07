@@ -22,7 +22,8 @@ Inspired by [gossm](https://github.com/gjbae1212/gossm) (archived in 2025).
   `sts:GetCallerIdentity` for `doctor --profile`.
 - For `exec` (ECS): `ecs:ListClusters`, `ecs:DescribeClusters`, `ecs:ListServices`, `ecs:DescribeServices`,
   `ecs:ListTasks`, `ecs:DescribeTasks`, `ecs:ExecuteCommand`. With `--cluster` and `--task` only the last two
-  are needed.
+  are needed. Port forwarding through a task (`forward --target ecs:...`) uses `ssm:StartSession` and
+  `ssm:TerminateSession` instead of `ecs:ExecuteCommand`.
 - On the instances: SSM Agent online and an instance profile that allows Session Manager. For `ssh` and `scp`
   additionally an SSH server and your public key in the target user's `authorized_keys`.
 
@@ -75,7 +76,8 @@ agent`. Tasks that belong to no service are listed under `(no service)`.
 
 The task side needs what ECS Exec always needs: the service or task started with `enableExecuteCommand`, and a
 task role allowing `ssmmessages:CreateControlChannel`, `ssmmessages:CreateDataChannel`,
-`ssmmessages:OpenControlChannel` and `ssmmessages:OpenDataChannel`. Port forwarding to tasks is not provided.
+`ssmmessages:OpenControlChannel` and `ssmmessages:OpenDataChannel`. For port forwarding through a task see
+`forward --target ecs:...` above.
 
 ### forward
 
@@ -85,12 +87,20 @@ ssm-commander forward prod-db              # reuse the saved preset, no prompts
 ssm-commander forward                      # pick the instance and answer the prompts
 ssm-commander forward --list
 ssm-commander forward --delete prod-db
+ssm-commander forward --target ecs:prod/api --remote-host localhost --remote-port 8080 --local-port 18080 --save api-local
+ssm-commander forward --ecs                # pick cluster, service and task from lists, then answer the prompts
 ```
 
 ![Demo: save a port-forwarding preset, then reuse it by name](demo/forward.gif)
 
 `--remote-host localhost` forwards a port of the instance itself. Values you do not pass are prompted for.
 Press Ctrl+C to stop forwarding.
+
+The tunnel can also go through an ECS task: `--target ecs:cluster/service` (or `ecs:cluster/service/task-id`,
+or `--ecs` to pick from lists) uses the same selection as `exec`, so the task needs ECS Exec enabled. `localhost`
+then means the task itself, so `--remote-port 8080` reaches the container's port 8080, and another host is
+reached from the task's network (a Fargate task as a bastion for RDS, for example). A preset saved this way
+remembers the cluster and service and goes through the newest reachable task each time it runs.
 
 ### ssh and scp
 
@@ -138,7 +148,8 @@ work while their token is valid; this tool does not run the SSO login itself.
 The listings are a convenience. When a profile may not call `ec2:DescribeInstances`, `connect`, `forward --target`,
 `ssh` and `scp` still work with an instance id (a warning says the instance was not checked); a Name tag needs
 the listing. For `exec`, `--cluster` together with `--task` calls only `ecs:DescribeTasks` and
-`ecs:ExecuteCommand`, exactly what the AWS CLI needs.
+`ecs:ExecuteCommand`, exactly what the AWS CLI needs; `forward --target ecs:cluster/service/task-id` likewise
+calls only `ecs:DescribeTasks` and `ssm:StartSession`.
 
 ## How it works
 
@@ -148,7 +159,8 @@ and calls `StartSession`. The response is handed to `session-manager-plugin` exa
 nothing sits between your keyboard and the remote shell. Ctrl+C goes to the remote shell, not to ssm-commander.
 When the session ends, `TerminateSession` is called as a safety net. For `exec`, `ecs:ExecuteCommand` returns the
 same kind of session and the plugin is started with the `ecs:<cluster>_<task>_<runtimeId>` target, exactly as
-`aws ecs execute-command` does.
+`aws ecs execute-command` does. Port forwarding through a task is a normal `StartSession` with that same target,
+which Session Manager accepts for tasks that have ECS Exec enabled.
 
 ## Files and environment variables
 

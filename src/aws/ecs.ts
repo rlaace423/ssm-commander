@@ -74,6 +74,18 @@ export interface TaskRow {
   reason: string | null;
 }
 
+/** Prefix that marks an ECS hop in `forward --target`, mirroring the plugin's own `ecs:` target format. */
+export const ECS_TARGET_PREFIX = 'ecs:';
+
+export function isEcsTarget(text: string): boolean {
+  return text.startsWith(ECS_TARGET_PREFIX);
+}
+
+/** `ecs:service`, `ecs:cluster/service` or `ecs:cluster/service/taskId`. */
+export function parseEcsTarget(text: string): ExecTarget {
+  return parseExecTarget(text.slice(ECS_TARGET_PREFIX.length));
+}
+
 export function isTaskId(text: string): boolean {
   return TASK_ID.test(text);
 }

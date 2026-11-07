@@ -232,28 +232,6 @@ const common = {
 
 const connect: ConnectDeps = { ...common, runSession, saveHistory: async () => {}, now: () => new Date() };
 
-const forward: ForwardDeps = {
-  ...common,
-  runSession,
-  loadPresets,
-  savePresets,
-  descriptionInput: (config) => descriptionInput(config, promptIo),
-  confirmOverwrite,
-  writeStdout: (text) => {
-    process.stdout.write(text);
-  },
-};
-
-// The system ssh/scp are replaced by the fake session, which reads the user and target out of the arguments.
-const ssh: SshDeps = {
-  ...common,
-  selfCommand: () => ['ssm-commander'],
-  spawn: (command, args, options) => {
-    const instanceId = args.find((arg) => /^i-[0-9a-f]+/.test(arg)) ?? '';
-    return spawn(process.execPath, [FAKE_SESSION, command, privateIpOf(instanceId), ...args], options);
-  },
-};
-
 // The exec command gets the ECS estate above; the fake session plays the container shell.
 const exec: ExecDeps = {
   resolveContext,
@@ -277,6 +255,29 @@ const exec: ExecDeps = {
   requireTty: () => requireTty(),
   info,
   spinner,
+};
+
+const forward: ForwardDeps = {
+  ...common,
+  ecs: exec,
+  runSession,
+  loadPresets,
+  savePresets,
+  descriptionInput: (config) => descriptionInput(config, promptIo),
+  confirmOverwrite,
+  writeStdout: (text) => {
+    process.stdout.write(text);
+  },
+};
+
+// The system ssh/scp are replaced by the fake session, which reads the user and target out of the arguments.
+const ssh: SshDeps = {
+  ...common,
+  selfCommand: () => ['ssm-commander'],
+  spawn: (command, args, options) => {
+    const instanceId = args.find((arg) => /^i-[0-9a-f]+/.test(arg)) ?? '';
+    return spawn(process.execPath, [FAKE_SESSION, command, privateIpOf(instanceId), ...args], options);
+  },
 };
 
 process.exitCode = await main(process.argv, { connect, forward, ssh, scp: ssh, exec });

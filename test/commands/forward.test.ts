@@ -1,8 +1,11 @@
 import { describe, expect, test, vi } from 'vitest';
+import type { ClusterRow, ContainerInfo, ServiceSummary, TaskRow } from '../../src/aws/ecs.js';
+import type { EcsSelectionDeps } from '../../src/commands/exec.js';
 import {
   buildForwardSessionInput,
   FORWARD_DOCUMENT,
   type ForwardDeps,
+  renderPresetList,
   runForward,
   validatePort,
 } from '../../src/commands/forward.js';
@@ -42,8 +45,87 @@ const preset: ForwardPreset = {
   localPort: 2222,
 };
 
+const TASK_A = 'a'.repeat(32);
+const TASK_B = 'b'.repeat(32);
+const ecsContainer = (name: string, over: Partial<ContainerInfo> = {}): ContainerInfo => ({
+  name,
+  runtimeId: `${name}-rt`,
+  lastStatus: 'RUNNING',
+  agentStatus: 'RUNNING',
+  ...over,
+});
+const ecsTask = (taskId: string, over: Partial<TaskRow> = {}): TaskRow => ({
+  taskId,
+  arn: `arn:x/${taskId}`,
+  cluster: 'prod',
+  service: 'api',
+  lastStatus: 'RUNNING',
+  health: null,
+  launchType: 'FARGATE',
+  startedAt: null,
+  availabilityZone: null,
+  execEnabled: true,
+  taskDefinition: 'api:1',
+  containers: [ecsContainer('app')],
+  agentStatus: 'RUNNING',
+  connectable: true,
+  reason: null,
+  ...over,
+});
+const ecsCluster: ClusterRow = {
+  name: 'prod',
+  arn: 'arn:x/prod',
+  status: 'ACTIVE',
+  services: 1,
+  runningTasks: 2,
+  connectable: true,
+  reason: null,
+};
+const ecsService: ServiceSummary = {
+  name: 'api',
+  arn: 'arn:x/api',
+  desired: 2,
+  running: 2,
+  launchType: 'FARGATE',
+  taskDefinition: 'api:1',
+  execEnabled: true,
+  status: 'ACTIVE',
+};
+const ecsTasks = [ecsTask(TASK_A, { containers: [ecsContainer('app'), ecsContainer('sidecar')] }), ecsTask(TASK_B)];
+const ecsPreset: ForwardPreset = {
+  name: 'db-via-api',
+  kind: 'ecs',
+  profile: 'default',
+  region: 'ap-northeast-2',
+  cluster: 'prod',
+  service: 'api',
+  container: null,
+  remoteHost: 'db.internal',
+  remotePort: 5432,
+  localPort: 15432,
+};
+
+function fakeEcs(over: Partial<EcsSelectionDeps> = {}): EcsSelectionDeps {
+  const sender = { send: vi.fn() };
+  return {
+    ecsClient: vi.fn(async () => sender),
+    fetchClusters: vi.fn(async () => [ecsCluster]),
+    fetchServices: vi.fn(async () => [ecsService]),
+    fetchTasks: vi.fn(async (_ecs, _cluster: string, service?: string) =>
+      ecsTasks.filter((t) => service === undefined || t.service === service),
+    ),
+    describeTask: vi.fn(async (_ecs, _cluster: string, id: string) => ecsTasks.find((t) => t.taskId === id) ?? null),
+    pickCluster: vi.fn(async (rows: ClusterRow[]) => rows[0] as ClusterRow),
+    pickService: vi.fn(async (rows) => rows[0] as (typeof rows)[0]),
+    pickTask: vi.fn(async (rows: TaskRow[]) => rows[0] as TaskRow),
+    pickContainer: vi.fn(async (t: TaskRow) => t.containers[0] as ContainerInfo),
+    ...over,
+  };
+}
+
 function makeDeps(over: Partial<ForwardDeps> = {}, presets: PresetsFile = emptyPresets()) {
   const deps: ForwardDeps = {
+    ecs: fakeEcs(),
     resolveContext: vi.fn(async () => ctx),
     listInstances: vi.fn(async () => ({ rows: [web, db], ssmUnavailable: false })),
     pickInstance: vi.fn(async (rows: InstanceRow[]) => rows[0] as InstanceRow),
@@ -239,5 +321,82 @@ describe('runForward', () => {
     await expect(
       runForward(undefined, { target: 'db', remoteHost: 'localhost', remotePort: '22', localPort: '2222' }, deps),
     ).rejects.toThrow('Instance i-2 (db) cannot be connected: stopped');
+  });
+});
+
+describe('runForward through an ECS task', () => {
+  const ports = { remoteHost: 'db.internal', remotePort: '5432', localPort: '15432' };
+
+  test("--target ecs:cluster/service lists that service's tasks, asks which one, and forwards through it", async () => {
+    const deps = makeDeps();
+    expect(await runForward(undefined, { target: 'ecs:prod/api', ...ports }, deps)).toBe(0);
+    expect(deps.ecs.fetchClusters).not.toHaveBeenCalled();
+    expect(deps.ecs.fetchServices).not.toHaveBeenCalled();
+    expect(deps.ecs.fetchTasks).toHaveBeenCalledWith(expect.anything(), 'prod', 'api');
+    expect(deps.ecs.pickTask).toHaveBeenCalled();
+    expect(deps.ecs.pickContainer).toHaveBeenCalled(); // task A has two containers
+    expect(deps.listInstances).not.toHaveBeenCalled();
+    expect(deps.runSession).toHaveBeenCalledWith(ctx, {
+      Target: `ecs:prod_${TASK_A}_app-rt`,
+      DocumentName: FORWARD_DOCUMENT,
+      Parameters: { host: ['db.internal'], portNumber: ['5432'], localPortNumber: ['15432'] },
+    });
+    expect(deps.info).toHaveBeenCalledWith(expect.stringContaining(`ECS task ${TASK_A}`));
+  });
+
+  test('--container picks the container without asking', async () => {
+    const deps = makeDeps();
+    await runForward(undefined, { target: 'ecs:prod/api', container: 'sidecar', ...ports }, deps);
+    expect(deps.ecs.pickContainer).not.toHaveBeenCalled();
+    expect(deps.runSession).toHaveBeenCalledWith(
+      ctx,
+      expect.objectContaining({ Target: `ecs:prod_${TASK_A}_sidecar-rt` }),
+    );
+  });
+
+  test('--save stores an ECS preset with the cluster, service and container', async () => {
+    const deps = makeDeps();
+    await runForward(undefined, { target: 'ecs:prod/api', container: 'sidecar', save: 'db-via-api', ...ports }, deps);
+    expect(deps.savePresets).toHaveBeenCalledWith('/tmp/ssm-commander-test', {
+      version: 1,
+      presets: [{ ...ecsPreset, container: 'sidecar' }],
+    });
+  });
+
+  test('an ECS preset runs without prompts and takes the newest reachable task of the service', async () => {
+    const deps = makeDeps({}, upsertPreset(emptyPresets(), ecsPreset));
+    await runForward('db-via-api', {}, deps);
+    expect(deps.ecs.pickTask).not.toHaveBeenCalled();
+    expect(deps.ecs.pickContainer).not.toHaveBeenCalled();
+    expect(deps.descriptionInput).not.toHaveBeenCalled();
+    expect(deps.info).toHaveBeenCalledWith(expect.stringContaining(TASK_A));
+    expect(deps.runSession).toHaveBeenCalledWith(ctx, expect.objectContaining({ Target: `ecs:prod_${TASK_A}_app-rt` }));
+  });
+
+  test('--ecs without a target requires a terminal first, then walks cluster, service and task', async () => {
+    const blocked = makeDeps({
+      requireTty: () => {
+        throw new CliError('no tty');
+      },
+    });
+    await expect(runForward(undefined, { ecs: true, ...ports }, blocked)).rejects.toThrow('no tty');
+    expect(blocked.resolveContext).not.toHaveBeenCalled();
+
+    const deps = makeDeps();
+    await runForward(undefined, { ecs: true, ...ports }, deps);
+    expect(deps.ecs.fetchClusters).toHaveBeenCalled();
+    expect(deps.ecs.fetchServices).toHaveBeenCalledWith(expect.anything(), 'prod');
+    expect(deps.ecs.pickTask).toHaveBeenCalled();
+    expect(deps.runSession).toHaveBeenCalledWith(
+      ctx,
+      expect.objectContaining({ Target: expect.stringMatching(/^ecs:prod_/) }),
+    );
+  });
+
+  test('renderPresetList shows ECS presets as ecs:cluster/service', () => {
+    const out = renderPresetList(upsertPreset(upsertPreset(emptyPresets(), preset), ecsPreset));
+    expect(out).toContain('web (i-1)');
+    expect(out).toContain('ecs:prod/api');
+    expect(out).toContain('db.internal:5432 -> 15432');
   });
 });

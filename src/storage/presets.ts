@@ -2,15 +2,34 @@ import { join } from 'node:path';
 import { CliError } from '../errors.js';
 import { readJsonFile, writeJsonFile } from './paths.js';
 
-export interface ForwardPreset {
+interface PresetBase {
   name: string;
   profile: string;
   region: string;
-  instanceId: string;
-  instanceName: string | null;
   remoteHost: string;
   remotePort: number;
   localPort: number;
+}
+
+/** Through an EC2 instance. Files written before ECS support have no `kind`. */
+export interface Ec2Preset extends PresetBase {
+  kind?: 'ec2';
+  instanceId: string;
+  instanceName: string | null;
+}
+
+/** Through an ECS task: the service is stored, the task is looked up again on every run. */
+export interface EcsPreset extends PresetBase {
+  kind: 'ecs';
+  cluster: string;
+  service: string | null;
+  container: string | null;
+}
+
+export type ForwardPreset = Ec2Preset | EcsPreset;
+
+export function presetKind(preset: ForwardPreset): 'ec2' | 'ecs' {
+  return preset.kind ?? 'ec2';
 }
 
 export interface PresetsFile {

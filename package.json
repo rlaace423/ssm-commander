@@ -1,23 +1,60 @@
 {
   "name": "ssm-commander",
-  "description": "CLI tool to simplify the management and execution of AWS SSM commands. Easily create, list, and run your SSM commands with an interactive prompt.",
-  "version": "0.1.0",
-  "module": "src/index.ts",
+  "version": "0.2.0",
+  "description": "Connect to EC2 instances through AWS Systems Manager Session Manager by name: interactive shell, port forwarding, ssh and scp across AWS profiles, without the AWS CLI.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rlaace423/ssm-commander.git"
+  },
+  "keywords": [
+    "aws",
+    "ssm",
+    "session-manager",
+    "ec2",
+    "cli",
+    "port-forwarding",
+    "ssh"
+  ],
   "type": "module",
+  "bin": {
+    "ssm-commander": "dist/cli.mjs"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
-    "start": "bun run src/index.ts",
-    "format": "bun prettier . --write"
+    "build": "node esbuild.config.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "prepublishOnly": "npm run typecheck && npm run lint && npm test && npm run build"
   },
   "devDependencies": {
-    "@types/bun": "latest",
-    "prettier": "^3.3.3"
-  },
-  "peerDependencies": {
-    "typescript": "^5.0.0"
-  },
-  "dependencies": {
-    "@inquirer/prompts": "^5.3.8",
-    "commander": "^12.1.0",
-    "ora": "^8.0.1"
+    "@aws-sdk/client-ec2": "^3.1164.0",
+    "@aws-sdk/client-ssm": "^3.1164.0",
+    "@aws-sdk/client-sts": "^3.1164.0",
+    "@aws-sdk/credential-providers": "^3.1164.0",
+    "@biomejs/biome": "^2.6.6",
+    "@inquirer/core": "^12.0.6",
+    "@inquirer/figures": "^2.0.10",
+    "@inquirer/prompts": "^8.7.5",
+    "@inquirer/testing": "^3.3.16",
+    "@inquirer/type": "^4.2.1",
+    "@smithy/core": "^3.39.0",
+    "@smithy/types": "^4.20.0",
+    "@types/node": "^22.20.5",
+    "commander": "^15.1.0",
+    "esbuild": "^0.28.2",
+    "ora": "^10.0.0",
+    "string-width": "^8.3.0",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
   }
 }

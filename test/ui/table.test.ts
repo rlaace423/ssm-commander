@@ -4,9 +4,8 @@ import { createTable } from '../../src/ui/table.js';
 
 describe('createTable', () => {
   test('pads cells to the widest display width (Korean characters count as width 2)', () => {
-    const t = createTable([{ key: 'name', header: 'Name' }], [{ name: '웹서버' }, { name: 'ab' }], (r, k) =>
-      String(r[k]),
-    );
+    const rows: Record<string, string>[] = [{ name: '웹서버' }, { name: 'ab' }];
+    const t = createTable([{ key: 'name', header: 'Name' }], rows, (r, k) => r[k] ?? '');
     expect(stringWidth(t.lines[0]?.text ?? '')).toBe(stringWidth(t.lines[1]?.text ?? ''));
     expect(t.lines[1]?.text).toBe('│ ab     │');
     expect(t.lines[1]?.value).toEqual({ name: 'ab' });

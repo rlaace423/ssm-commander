@@ -181,3 +181,9 @@ describe('assertOwnOptionsFirst', () => {
     expect(() => assertOwnOptionsFirst(splitSshRest(['--user', 'ubuntu', 'hostname']).options)).toThrow(CliError);
   });
 });
+
+describe('splitSshRest with OpenSSH 9.6 options', () => {
+  test('-P takes a value', () => {
+    expect(splitSshRest(['-P', 'tag', 'hostname'])).toEqual({ options: ['-P', 'tag'], command: ['hostname'] });
+  });
+});

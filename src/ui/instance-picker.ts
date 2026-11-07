@@ -12,6 +12,7 @@ export const INSTANCE_COLUMNS: TableColumn[] = [
   { key: 'instanceType', header: 'Type' },
   { key: 'privateIp', header: 'Private IP' },
   { key: 'publicIp', header: 'Public IP' },
+  { key: 'reason', header: 'Note' },
 ];
 
 const RECENT_MARK = '*';
@@ -19,7 +20,7 @@ const RECENT_MARK = '*';
 export interface InstanceChoices {
   header: string;
   footer: string;
-  choices: Array<TableChoice<InstanceRow> & { disabled?: string }>;
+  choices: Array<TableChoice<InstanceRow>>;
 }
 
 export function buildInstanceChoices(rows: InstanceRow[], recentIds: string[]): InstanceChoices {
@@ -35,7 +36,7 @@ export function buildInstanceChoices(rows: InstanceRow[], recentIds: string[]): 
     choices: table.lines.map(({ text, value }) => ({
       name: text,
       value,
-      disabled: value.connectable ? undefined : `(${value.reason})`,
+      disabled: value.connectable ? undefined : true, // the reason is already in the Note column
     })),
   };
 }

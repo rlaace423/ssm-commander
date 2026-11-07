@@ -1,6 +1,6 @@
 import { render } from '@inquirer/testing';
 import { describe, expect, test, vi } from 'vitest';
-import { tableSearch } from '../../src/ui/table-search.js';
+import { highlightMatches, tableSearch } from '../../src/ui/table-search.js';
 
 const all = [
   { name: '│ alpha │ i-1 │', value: 1 },
@@ -46,6 +46,8 @@ describe('tableSearch', () => {
     const first = await render(tableSearch, { ...base, source: () => mixed });
     await vi.waitFor(() => expect(first.getScreen()).toContain('gamma'));
     expect(first.getScreen()).toContain('alpha (stopped)');
+    expect(first.getScreen()).toContain('gamma');
+    expect(first.getScreen()).not.toContain('(disabled)');
     first.events.keypress('down');
     first.events.keypress('up');
     first.events.keypress('enter');
@@ -61,5 +63,17 @@ describe('tableSearch', () => {
     expect(outcome).toBe('pending');
     onlyDisabled.answer.catch(() => {});
     onlyDisabled.events.keypress({ name: 'c', ctrl: true });
+  });
+});
+
+describe('highlightMatches', () => {
+  const base = (t: string) => `[${t}]`;
+  const match = (t: string) => `<${t}>`;
+
+  test('marks every case-insensitive occurrence while keeping the original text', () => {
+    expect(highlightMatches('Web-1 web', 'web', base, match)).toBe('<Web>[-1 ]<web>');
+    expect(highlightMatches('nothing', 'x', base, match)).toBe('[nothing]');
+    expect(highlightMatches('plain', '', base, match)).toBe('[plain]');
+    expect(highlightMatches('a.b', '.', base, match)).toBe('[a]<.>[b]');
   });
 });

@@ -24,6 +24,7 @@ export const SSH_VALUE_OPTIONS = new Set([
   '-S',
   '-W',
   '-w',
+  '-P',
 ]);
 /** scp options that consume the next argv token as their value. */
 export const SCP_VALUE_OPTIONS = new Set(['-c', '-D', '-F', '-i', '-J', '-l', '-o', '-P', '-S', '-X']);

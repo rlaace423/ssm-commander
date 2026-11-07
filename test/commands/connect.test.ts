@@ -104,6 +104,14 @@ describe('runConnect', () => {
     expect(only.listInstances).toHaveBeenCalledWith(ctx, { recentIds: [], connectableOnly: false });
   });
 
+  test('explains when --connectable leaves nothing to pick instead of saying no instances exist', async () => {
+    const deps = makeDeps({ listInstances: vi.fn(async () => ({ rows: [db], ssmUnavailable: false })) });
+    await expect(runConnect(undefined, { connectable: true }, deps)).rejects.toThrow(
+      'No connectable instances (1 listed); run without --connectable to see them',
+    );
+    expect(deps.pickInstance).not.toHaveBeenCalled();
+  });
+
   test('tells the user and opens the picker when the target is not found', async () => {
     const deps = makeDeps();
     await runConnect('zzz', {}, deps);

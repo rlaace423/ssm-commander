@@ -61,14 +61,29 @@ function isSelectable<Value>(item: TableChoice<Value>): boolean {
   return !item.disabled;
 }
 
-function highlightMatches(
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Paints the parts of `text` that match `term` (case-insensitively) with `match`, the rest with `base`. */
+export function highlightMatches(
   text: string,
   term: string,
   base: (t: string) => string,
   match: (t: string) => string,
 ): string {
   if (term.length === 0) return base(text);
-  return text.split(term).map(base).join(match(term));
+  const pattern = new RegExp(escapeRegExp(term), 'gi');
+  let out = '';
+  let last = 0;
+  for (const found of text.matchAll(pattern)) {
+    const start = found.index ?? 0;
+    if (start > last) out += base(text.slice(last, start));
+    out += match(found[0]);
+    last = start + found[0].length;
+  }
+  if (last < text.length) out += base(text.slice(last));
+  return out;
 }
 
 /** Lines of the table header/footer are indented to line up with the cursor column of the list. */
@@ -166,8 +181,8 @@ export const tableSearch = createPrompt(
       active,
       renderItem({ item, isActive }) {
         if (item.disabled) {
-          const label = typeof item.disabled === 'string' ? item.disabled : '(disabled)';
-          return theme.style.disabled(`${item.name} ${label}`);
+          const label = typeof item.disabled === 'string' ? ` ${item.disabled}` : '';
+          return theme.style.disabled(`${item.name}${label}`);
         }
         const paint = isActive ? theme.style.highlight : (text: string) => text;
         const cursor = isActive ? theme.icon.cursor : ' ';

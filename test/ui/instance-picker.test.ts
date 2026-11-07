@@ -27,12 +27,14 @@ describe('buildInstanceChoices', () => {
     expect(choices[0]?.name.startsWith('│ * web │ i-1 ')).toBe(true);
     expect(choices[0]?.disabled).toBeUndefined();
     expect(choices[1]?.name.startsWith('│ db    │ i-2 ')).toBe(true);
-    expect(choices[1]?.disabled).toBe('(stopped)');
+    expect(choices[1]?.name.endsWith(' stopped │')).toBe(true);
+    expect(choices[1]?.disabled).toBe(true);
+    expect(choices[0]?.name.endsWith('│       │')).toBe(true);
     expect(choices[1]?.value).toBe(rows[1]);
     expect(choices[2]?.name.startsWith('│       │ i-3 ')).toBe(true);
   });
 
-  test('header contains all seven column titles', () => {
+  test('header contains all column titles including the Note column for the reason', () => {
     const { header, footer } = buildInstanceChoices([], []);
     expect(INSTANCE_COLUMNS.map((c) => c.header)).toEqual([
       'Name',
@@ -42,6 +44,7 @@ describe('buildInstanceChoices', () => {
       'Type',
       'Private IP',
       'Public IP',
+      'Note',
     ]);
     for (const column of INSTANCE_COLUMNS) expect(header).toContain(column.header);
     expect(footer.startsWith('└')).toBe(true);

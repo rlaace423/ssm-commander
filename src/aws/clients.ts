@@ -1,4 +1,5 @@
 import type { EC2Client } from '@aws-sdk/client-ec2';
+import type { ECSClient } from '@aws-sdk/client-ecs';
 import { SSMClient } from '@aws-sdk/client-ssm';
 import { STSClient } from '@aws-sdk/client-sts';
 import type { AwsContext } from '../types.js';
@@ -15,6 +16,12 @@ export function createSsmClient(ctx: AwsContext): SSMClient {
 export async function createEc2Client(ctx: AwsContext): Promise<EC2Client> {
   const { EC2Client } = await import('@aws-sdk/client-ec2');
   return new EC2Client(clientConfig(ctx));
+}
+
+/** Loaded on demand like EC2; only the exec command needs it. */
+export async function createEcsClient(ctx: AwsContext): Promise<ECSClient> {
+  const { ECSClient } = await import('@aws-sdk/client-ecs');
+  return new ECSClient(clientConfig(ctx));
 }
 
 export function createStsClient(ctx: AwsContext): STSClient {

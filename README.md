@@ -4,6 +4,8 @@ Connect to EC2 instances through AWS Systems Manager Session Manager **by name i
 profile, pick an instance from a searchable list, and you are in. Port forwarding, `ssh` and `scp` over Session
 Manager are included, across all of your AWS profiles, and the AWS CLI is not required.
 
+![Demo: pick a profile, pick an instance from the table, and you are in a shell](demo/connect.gif)
+
 Inspired by [gossm](https://github.com/gjbae1212/gossm) (archived in 2025).
 
 ## Requirements

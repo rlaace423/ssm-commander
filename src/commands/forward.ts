@@ -16,11 +16,11 @@ import {
 import type { AwsContext, InstanceRow, StartSessionInput } from '../types.js';
 import { type DescriptionInputConfig, descriptionInput } from '../ui/description-input.js';
 import { pickInstance } from '../ui/instance-picker.js';
-import { info, type Spinner, spinner } from '../ui/output.js';
+import { info, type Spinner, spinner, warn } from '../ui/output.js';
 import { confirmOverwrite, promptIo, requireTty } from '../ui/prompts.js';
 import { createTable } from '../ui/table.js';
 import { fetchInstances } from './connect.js';
-import { selectInstance } from './select-instance.js';
+import { rowsOrTrustedId, selectInstance } from './select-instance.js';
 
 export const FORWARD_DOCUMENT = 'AWS-StartPortForwardingSessionToRemoteHost';
 const PORT_ERROR = 'Enter a port number between 1 and 65535';
@@ -71,6 +71,7 @@ export interface ForwardDeps {
   confirmOverwrite: (name: string) => Promise<boolean>;
   requireTty: () => void;
   info: (message: string) => void;
+  warn: (message: string) => void;
   writeStdout: (text: string) => void;
   spinner: (text: string) => Spinner;
   loadHistory: (dir: string) => Promise<HistoryFile>;
@@ -89,6 +90,7 @@ export function defaultForwardDeps(): ForwardDeps {
     confirmOverwrite,
     requireTty: () => requireTty(),
     info,
+    warn,
     writeStdout: (text) => {
       process.stdout.write(text);
     },
@@ -169,15 +171,17 @@ export async function runForward(
     instance = { instanceId: preset.instanceId, name: preset.instanceName };
   } else {
     const recentIds = recentInstanceIds(await deps.loadHistory(deps.configDir), ctx.profile, ctx.region);
-    const { rows } = await fetchInstances(ctx, recentIds, deps);
-    const pickRows = opts.connectable ? filterConnectable(rows) : rows;
-    const row = await selectInstance(
-      opts.target,
-      rows,
-      pickRows,
-      { message: 'Select an instance to forward through', recentIds },
-      deps,
-    );
+    const listing = await rowsOrTrustedId(opts.target, () => fetchInstances(ctx, recentIds, deps), deps.warn);
+    const pickRows = opts.connectable ? filterConnectable(listing.rows) : listing.rows;
+    const row =
+      listing.trusted ??
+      (await selectInstance(
+        opts.target,
+        listing.rows,
+        pickRows,
+        { message: 'Select an instance to forward through', recentIds },
+        deps,
+      ));
     instance = { instanceId: row.instanceId, name: row.name };
   }
 

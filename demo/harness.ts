@@ -141,11 +141,12 @@ const common = {
   loadHistory,
   configDir: DEMO_HOME,
   info,
+  warn,
   spinner,
   requireTty: () => requireTty(),
 };
 
-const connect: ConnectDeps = { ...common, runSession, saveHistory: async () => {}, now: () => new Date(), warn };
+const connect: ConnectDeps = { ...common, runSession, saveHistory: async () => {}, now: () => new Date() };
 
 const forward: ForwardDeps = {
   ...common,

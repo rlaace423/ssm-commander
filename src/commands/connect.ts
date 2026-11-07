@@ -8,7 +8,7 @@ import type { AwsContext, InstanceRow, StartSessionInput } from '../types.js';
 import { pickInstance } from '../ui/instance-picker.js';
 import { info, type Spinner, spinner, warn } from '../ui/output.js';
 import { requireTty } from '../ui/prompts.js';
-import { selectInstance } from './select-instance.js';
+import { rowsOrTrustedId, selectInstance } from './select-instance.js';
 
 export interface ConnectOptions {
   profile?: string;
@@ -65,17 +65,19 @@ export async function runConnect(
   const history = await deps.loadHistory(deps.configDir);
   const recentIds = recentInstanceIds(history, ctx.profile, ctx.region);
 
-  const { rows, ssmUnavailable } = await fetchInstances(ctx, recentIds, deps);
-  if (ssmUnavailable) deps.warn(SSM_UNAVAILABLE_WARNING);
-  const pickRows = opts.connectable ? filterConnectable(rows) : rows;
+  const listing = await rowsOrTrustedId(target, () => fetchInstances(ctx, recentIds, deps), deps.warn);
+  if (listing.ssmUnavailable) deps.warn(SSM_UNAVAILABLE_WARNING);
+  const pickRows = opts.connectable ? filterConnectable(listing.rows) : listing.rows;
 
-  const row = await selectInstance(
-    target,
-    rows,
-    pickRows,
-    { message: 'Select an instance to connect', recentIds },
-    deps,
-  );
+  const row =
+    listing.trusted ??
+    (await selectInstance(
+      target,
+      listing.rows,
+      pickRows,
+      { message: 'Select an instance to connect', recentIds },
+      deps,
+    ));
   deps.info(
     `Connecting to ${row.name ?? row.instanceId} (${row.instanceId}) in ${ctx.region} with profile ${ctx.profile}...`,
   );

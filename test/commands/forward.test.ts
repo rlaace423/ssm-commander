@@ -55,6 +55,7 @@ function makeDeps(over: Partial<ForwardDeps> = {}, presets: PresetsFile = emptyP
     confirmOverwrite: vi.fn(async () => true),
     requireTty: vi.fn(),
     info: vi.fn(),
+    warn: vi.fn(),
     writeStdout: vi.fn(),
     spinner: () => ({ stop() {}, fail() {} }),
     loadHistory: vi.fn(async () => emptyHistory()),
@@ -220,6 +221,17 @@ describe('runForward', () => {
     expect(file.presets).toEqual([]);
     expect(deps.info).toHaveBeenCalledWith('Deleted preset "web-ssh"');
     await expect(runForward(undefined, { delete: 'ghost' }, makeDeps())).rejects.toThrow(CliError);
+  });
+
+  test('forwards through an instance id as given when the listing is denied', async () => {
+    const deps = makeDeps({
+      listInstances: vi.fn(async () => {
+        throw Object.assign(new Error('denied'), { name: 'UnauthorizedOperation' });
+      }),
+    });
+    await runForward(undefined, { target: 'i-9', remoteHost: 'localhost', remotePort: '22', localPort: '2222' }, deps);
+    expect(deps.warn).toHaveBeenCalledWith(expect.stringContaining('ec2:DescribeInstances'));
+    expect(deps.runSession).toHaveBeenCalledWith(ctx, expect.objectContaining({ Target: 'i-9' }));
   });
 
   test('refuses a non-connectable target', async () => {

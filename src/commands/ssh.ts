@@ -15,10 +15,10 @@ import { type HistoryFile, loadHistory, recentInstanceIds } from '../storage/his
 import { configDir } from '../storage/paths.js';
 import type { AwsContext, InstanceRow } from '../types.js';
 import { pickInstance } from '../ui/instance-picker.js';
-import { info, type Spinner, spinner } from '../ui/output.js';
+import { info, type Spinner, spinner, warn } from '../ui/output.js';
 import { requireTty } from '../ui/prompts.js';
 import { fetchInstances } from './connect.js';
-import { selectInstance } from './select-instance.js';
+import { rowsOrTrustedId, selectInstance } from './select-instance.js';
 
 export interface SshOptions {
   profile?: string;
@@ -41,6 +41,7 @@ export interface SshDeps {
   spawn: SpawnFn;
   selfCommand: () => string[];
   info: (message: string) => void;
+  warn: (message: string) => void;
   spinner: (text: string) => Spinner;
   requireTty: () => void;
 }
@@ -55,6 +56,7 @@ export function defaultSshDeps(): SshDeps {
     spawn,
     selfCommand: () => selfCommand(),
     info,
+    warn,
     spinner,
     requireTty: () => requireTty(),
   };
@@ -70,9 +72,9 @@ export async function prepareTarget(
   if (target === undefined) deps.requireTty(); // the picker needs a terminal; fail before any AWS call
   const ctx = await deps.resolveContext({ profile: opts.profile, region: opts.region });
   const recentIds = recentInstanceIds(await deps.loadHistory(deps.configDir), ctx.profile, ctx.region);
-  const { rows } = await fetchInstances(ctx, recentIds, deps);
-  const pickRows = opts.connectable ? filterConnectable(rows) : rows;
-  const row = await selectInstance(target, rows, pickRows, { message, recentIds }, deps);
+  const listing = await rowsOrTrustedId(target, () => fetchInstances(ctx, recentIds, deps), deps.warn);
+  const pickRows = opts.connectable ? filterConnectable(listing.rows) : listing.rows;
+  const row = listing.trusted ?? (await selectInstance(target, listing.rows, pickRows, { message, recentIds }, deps));
   const proxyCommand = buildProxyCommand(deps.selfCommand(), {
     profile: ctx.profile,
     region: ctx.region,

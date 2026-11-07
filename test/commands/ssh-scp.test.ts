@@ -50,6 +50,7 @@ function makeDeps(over: Partial<SshDeps> = {}): SshDeps {
     spawn: fakeSpawn({ code: 0 }) as unknown as SshDeps['spawn'],
     selfCommand: () => ['/node', '/cli.mjs'],
     info: vi.fn(),
+    warn: vi.fn(),
     spinner: () => ({ stop() {}, fail() {} }),
     requireTty: vi.fn(),
     ...over,
@@ -57,6 +58,17 @@ function makeDeps(over: Partial<SshDeps> = {}): SshDeps {
 }
 
 describe('runSsh', () => {
+  test('uses an instance id as given when the listing is denied', async () => {
+    const deps = makeDeps({
+      listInstances: vi.fn(async () => {
+        throw Object.assign(new Error('denied'), { name: 'UnauthorizedOperation' });
+      }),
+    });
+    expect(await runSsh(['i-9'], {}, deps)).toBe(0);
+    expect(deps.warn).toHaveBeenCalledWith(expect.stringContaining('ec2:DescribeInstances'));
+    expect(deps.spawn).toHaveBeenCalledWith('ssh', expect.arrayContaining(['i-9']), expect.anything());
+  });
+
   test('spawns ssh with the built args and inherited stdio', async () => {
     const deps = makeDeps({ spawn: fakeSpawn({ code: 3 }) as unknown as SshDeps['spawn'] });
     const code = await runSsh(

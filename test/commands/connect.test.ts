@@ -47,6 +47,34 @@ function makeDeps(over: Partial<ConnectDeps> = {}): ConnectDeps {
   };
 }
 
+const denied = () => Object.assign(new Error('denied'), { name: 'UnauthorizedOperation' });
+
+describe('runConnect without permission to list instances', () => {
+  test('connects to an instance id as given, after a warning naming the missing action', async () => {
+    const deps = makeDeps({
+      listInstances: vi.fn(async () => {
+        throw denied();
+      }),
+    });
+    expect(await runConnect('i-9', {}, deps)).toBe(0);
+    expect(deps.runSession).toHaveBeenCalledWith(ctx, { Target: 'i-9' });
+    expect(deps.warn).toHaveBeenCalledWith(expect.stringContaining('ec2:DescribeInstances'));
+    expect(deps.pickInstance).not.toHaveBeenCalled();
+  });
+
+  test('a Name target cannot be resolved: the error suggests the instance id', async () => {
+    const deps = makeDeps({
+      listInstances: vi.fn(async () => {
+        throw denied();
+      }),
+    });
+    const err = await runConnect('web', {}, deps).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(CliError);
+    expect((err as CliError).hint).toContain('instance id');
+    expect(deps.runSession).not.toHaveBeenCalled();
+  });
+});
+
 describe('runConnect', () => {
   test('connects to the resolved target and records history', async () => {
     const deps = makeDeps({ runSession: vi.fn(async () => 5) });
@@ -139,10 +167,10 @@ describe('runConnect', () => {
     );
   });
 
-  test('maps listing errors to CliError with the EC2 action', async () => {
+  test('maps listing errors to CliError with the EC2 action when the picker needs the listing', async () => {
     const denied = Object.assign(new Error('nope'), { name: 'UnauthorizedOperation' });
     const deps = makeDeps({ listInstances: vi.fn(async () => Promise.reject(denied)) });
-    await expect(runConnect('i-1', {}, deps)).rejects.toThrow(
+    await expect(runConnect(undefined, {}, deps)).rejects.toThrow(
       'Profile "default" is not allowed to perform ec2:DescribeInstances',
     );
   });

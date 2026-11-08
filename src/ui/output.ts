@@ -34,6 +34,8 @@ export interface Spinner {
 
 export function spinner(text: string): Spinner {
   if (!process.stderr.isTTY) return { stop() {}, fail() {} };
-  const instance = ora({ text, stream: process.stderr }).start();
+  // ora's default discardStdin puts the terminal in raw mode while the spinner runs, which delays Ctrl+C and can
+  // leave the terminal without signal handling when a prompt follows; the keyboard is left alone instead.
+  const instance = ora({ text, stream: process.stderr, discardStdin: false }).start();
   return { stop: () => instance.stop(), fail: (message) => instance.fail(message) };
 }

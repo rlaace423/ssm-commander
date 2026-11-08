@@ -35,7 +35,8 @@ linked role", ECS was still creating its service-linked role; run `up` again.
   and the plugin prints `Exiting session with sessionId`.
 - [ ] `ssm-commander connect -p <profile>` lists instances with State and SSM columns; the one you just used is
   marked `*`; non-connectable rows are dimmed with a reason and cannot be selected.
-- [ ] `ssm-commander connect <stopped-instance-name> -p <profile>` fails with `cannot be connected: stopped`.
+- [ ] `ssm-commander connect <stopped-instance-name> -p <profile>` fails with `cannot be connected: stopped` (the
+  test-infra stack creates running instances only: stop one first with `aws ec2 stop-instances`).
 - [ ] `ssm-commander connect --connectable -p <profile>` hides the non-connectable rows.
 - [ ] `ssm-commander forward -p <profile> --target <name> --remote-host localhost --remote-port 22 --local-port 2222 --save t`
   then, in another terminal, `ssh -p 2222 <user>@localhost hostname` prints the hostname; Ctrl+C stops the
@@ -45,6 +46,11 @@ linked role", ECS was still creating its service-linked role; run `up` again.
 - [ ] `ssm-commander scp --profile <profile> ./file user@<name>:/tmp/file` followed by the download in the other
   direction gives an identical file; `-r` copies a directory.
 - [ ] Inside a session, Ctrl+C interrupts the remote command (try `sleep 30`) and ssm-commander keeps running.
+- [ ] Ctrl+C pressed right after `ssm-commander connect -p <profile>` starts (while the spinner runs) ends the
+  command with exit code 130 and leaves the terminal usable: `stty -a` still lists `isig`, and a later Ctrl+C
+  stops `forward`.
+- [ ] `ssm-commander forward <preset>` while the same preset is still running in another terminal fails at once
+  with `Local port <n> is already in use` instead of hanging.
 - [ ] After every session no `session-manager-plugin` process is left behind (`pgrep session-manager-plugin`).
 
 ## ECS (exec)

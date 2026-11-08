@@ -1,5 +1,8 @@
-import { chmodSync } from 'node:fs';
+import { chmodSync, rmSync } from 'node:fs';
 import { build } from 'esbuild';
+
+// Start from an empty dist: chunk names carry content hashes, so a stale build would otherwise ship in the package.
+rmSync('dist', { recursive: true, force: true });
 
 await build({
   entryPoints: ['src/cli.ts'],

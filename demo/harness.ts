@@ -268,6 +268,7 @@ const exec: ExecDeps = {
 const forward: ForwardDeps = {
   ...common,
   ecs: exec,
+  checkLocalPort: async () => {}, // the fake session opens no port
   runSession,
   loadPresets,
   savePresets,

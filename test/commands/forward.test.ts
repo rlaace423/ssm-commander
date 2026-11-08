@@ -142,10 +142,32 @@ function makeDeps(over: Partial<ForwardDeps> = {}, presets: PresetsFile = emptyP
     writeStdout: vi.fn(),
     spinner: () => ({ stop() {}, fail() {} }),
     loadHistory: vi.fn(async () => emptyHistory()),
+    checkLocalPort: vi.fn(async () => {}),
     ...over,
   };
   return deps;
 }
+
+describe('local port check', () => {
+  const ports = { remoteHost: 'db.internal', remotePort: '5432', localPort: '15432' };
+
+  test('checks the local port before starting the session and refuses to start when it is taken', async () => {
+    const deps = makeDeps();
+    await runForward(undefined, { target: 'web', ...ports }, deps);
+    expect(deps.checkLocalPort).toHaveBeenCalledWith(15432);
+    const check = (deps.checkLocalPort as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0] ?? Infinity;
+    const session = (deps.runSession as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0] ?? -1;
+    expect(check).toBeLessThan(session);
+
+    const busy = makeDeps({
+      checkLocalPort: vi.fn(async () => {
+        throw new CliError('Local port 15432 is already in use');
+      }),
+    });
+    await expect(runForward(undefined, { target: 'web', ...ports }, busy)).rejects.toThrow('already in use');
+    expect(busy.runSession).not.toHaveBeenCalled();
+  });
+});
 
 describe('helpers', () => {
   test('buildForwardSessionInput produces the exact document and parameter shape', () => {

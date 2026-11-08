@@ -40,6 +40,13 @@ or run it without installing:
 npx ssm-commander
 ```
 
+From a checkout (to try a branch, or until the package is on npm):
+
+```bash
+git clone https://github.com/rlaace423/ssm-commander.git && cd ssm-commander
+npm install && npm run build && npm link   # puts ssm-commander on your PATH
+```
+
 ## Usage
 
 ### connect (the default command)
@@ -52,8 +59,9 @@ ssm-commander connect --connectable        # list only instances that can be con
 ```
 
 The list shows every instance of the region except terminated ones, with the columns Name, Instance Id, State,
-SSM, Type, Private IP and Public IP. Type to filter by name, instance id or IP address. Recently connected
-instances come first and are marked with `*`. Instances that cannot be connected (stopped, no SSM agent, agent
+SSM, Type, Private IP and Public IP. Type to filter by name, instance id or IP address. Instances you have
+connected to before come first and are marked with `*` (the history is written by `connect` and `exec`; `forward`,
+`ssh` and `scp` show the marks but do not add to it). Instances that cannot be connected (stopped, no SSM agent, agent
 connection lost) are dimmed with the reason and cannot be selected; naming one explicitly fails with that reason.
 
 ### exec (ECS containers)
@@ -80,7 +88,7 @@ they change with every deployment.
 The task side needs what ECS Exec always needs: the service or task started with `enableExecuteCommand`, and a
 task role allowing `ssmmessages:CreateControlChannel`, `ssmmessages:CreateDataChannel`,
 `ssmmessages:OpenControlChannel` and `ssmmessages:OpenDataChannel`. For port forwarding through a task see
-`forward --target ecs:...` above.
+`forward --target ecs:...` below.
 
 ### forward
 
@@ -97,7 +105,8 @@ ssm-commander forward --ecs                # pick cluster, service and task from
 ![Demo: save a port-forwarding preset, then reuse it by name](demo/forward.gif)
 
 `--remote-host localhost` forwards a port of the instance itself. Values you do not pass are prompted for.
-Press Ctrl+C to stop forwarding.
+Press Ctrl+C to stop forwarding. If the local port is already taken (an earlier forward still running in another
+terminal, for example), the command stops with `Local port <n> is already in use` before opening a session.
 
 The tunnel can also go through an ECS task: `--target ecs:cluster/service` (or `ecs:cluster/service/task-id`,
 or `--ecs` to pick from lists) uses the same selection as `exec`, so the task needs ECS Exec enabled. `localhost`
@@ -121,8 +130,8 @@ Argument order for `ssh`: ssm-commander's own options (`--profile`, `--region`, 
 would write them for `ssh` itself. Everything after the target is passed through unchanged, so `-o ...`, port
 forwards and remote commands with their own flags all work. The target may be written as `user@name`; the default
 user is `ec2-user`, `--user` overrides it, and `user@` overrides both. For `scp`, exactly one side of the transfer
-is `[user@]instance:path`, where `instance` is a Name tag or instance id, and `-r` and other scp flags pass
-through.
+is `[user@]instance:path`, where `instance` is a Name tag or instance id. Put scp's own flags (`-r`, `-o ...`)
+before the two paths, as `scp` itself requires; after the paths scp would read them as file names.
 
 Under the hood both commands run the system `ssh`/`scp` with a `ProxyCommand` that calls a hidden
 `ssm-commander proxy` subcommand, which opens an `AWS-StartSSHSession` through Session Manager. Host keys are
@@ -199,7 +208,8 @@ npm run lint        # biome
 npm run build       # esbuild → dist/
 ```
 
-Design and implementation notes live under `docs/superpowers/`; the release checklist that exercises the real
+The working documents of the 0.2.0 rewrite (design notes and task plans, partly in Korean and in places overtaken
+by later changes; the README describes the current behavior) live under `docs/superpowers/`. The release checklist that exercises the real
 plugin and AWS APIs is [docs/manual-verification.md](docs/manual-verification.md); `test-infra/` holds a CloudFormation
 template, with `stack.sh` to create and delete it, for the throwaway instances and ECS services that checklist uses.
 

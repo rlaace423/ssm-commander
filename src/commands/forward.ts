@@ -2,6 +2,7 @@ import { buildExecTarget, type ExecTarget, isEcsTarget, parseEcsTarget, STANDALO
 import { filterConnectable, listInstances } from '../aws/instances.js';
 import { resolveContext } from '../context.js';
 import { CliError, describeAwsError, IAM_ACTIONS } from '../errors.js';
+import { assertLocalPortFree } from '../session/local-port.js';
 import { defaultRunSessionDeps, runSession } from '../session/run-session.js';
 import { type HistoryFile, loadHistory, recentEcsTargets, recentInstanceIds } from '../storage/history.js';
 import { configDir } from '../storage/paths.js';
@@ -78,6 +79,8 @@ export interface ForwardDeps {
   pickInstance: (rows: InstanceRow[], opts: { message: string; recentIds: string[] }) => Promise<InstanceRow>;
   ecs: EcsSelectionDeps;
   runSession: (ctx: AwsContext, input: StartSessionInput) => Promise<number>;
+  /** Rejects with a CliError when the local port cannot be opened; runs before StartSession. */
+  checkLocalPort: (port: number) => Promise<void>;
   loadPresets: (dir: string) => Promise<PresetsFile>;
   savePresets: (dir: string, file: PresetsFile) => Promise<void>;
   configDir: string;
@@ -98,6 +101,7 @@ export function defaultForwardDeps(): ForwardDeps {
     pickInstance,
     ecs: defaultEcsSelectionDeps(),
     runSession: (ctx, input) => runSession(ctx, input, defaultRunSessionDeps(ctx)),
+    checkLocalPort: (port) => assertLocalPortFree(port),
     loadPresets,
     savePresets,
     configDir: configDir(),
@@ -315,6 +319,9 @@ export async function runForward(
       await deps.savePresets(deps.configDir, upsertPreset(presets, saved));
     }
   }
+
+  // A taken port would make the plugin wait without a word after the session is already open.
+  await deps.checkLocalPort(localPort);
 
   const via =
     hop.kind === 'ecs'

@@ -60,14 +60,17 @@ export function createProgram(deps: ProgramDeps = {}): Command {
 
   program
     .command('forward')
-    .description('Forward a local port to a service reachable from an EC2 instance')
+    .description('Forward a local port to a service reachable from an EC2 instance or an ECS task')
     .argument('[preset]', 'name of a saved preset to run')
     .option('-p, --profile <profile>', 'AWS profile (defaults to AWS_PROFILE, then a prompt)')
     .option('-r, --region <region>', 'AWS region (defaults to the profile region, then a prompt)')
     .option('--target <target>', 'instance id or Name tag, or ecs:cluster/service[/task-id]; omit to pick from a list')
     .option('--ecs', 'go through an ECS task instead of an instance (pick cluster, service and task from lists)')
     .option('--container <name>', 'container of the ECS task to go through (asked when there are several)')
-    .option('--remote-host <host>', 'host to reach from the instance ("localhost" means the instance itself)')
+    .option(
+      '--remote-host <host>',
+      'host to reach from the instance or task ("localhost" means the instance or task itself)',
+    )
     .option('--remote-port <port>', 'port of the service on the remote host')
     .option('--local-port <port>', 'local port to listen on')
     .option('--save <name>', 'save these settings as a preset before connecting')
@@ -83,9 +86,12 @@ export function createProgram(deps: ProgramDeps = {}): Command {
     if (valid !== true) throw new InvalidArgumentError(valid);
     return Number(value);
   };
-  const passThroughNote =
-    'Options of ssm-commander must come before the target; everything else is passed through unchanged. ' +
+  const sshNote =
+    'Options of ssm-commander come before the target; everything after the target is passed to ssh unchanged. ' +
     'Requires an SSH server and your public key on the instance.';
+  const scpNote =
+    "Options of ssm-commander come first, then scp's own flags, then the two paths (scp reads flags after the " +
+    'paths as file names). Requires an SSH server and your public key on the instance.';
 
   const addSshOptions = (command: Command) =>
     command
@@ -101,7 +107,7 @@ export function createProgram(deps: ProgramDeps = {}): Command {
   addSshOptions(
     program
       .command('ssh')
-      .description(`Open ssh to an EC2 instance through Session Manager. ${passThroughNote}`)
+      .description(`Open ssh to an EC2 instance through Session Manager. ${sshNote}`)
       .argument('[args...]', 'target (instance id or Name tag) followed by ssh options and a remote command'),
   ).action(async (args: string[], opts: SshOptions) => {
     lastExitCode = await runSsh(args, opts, deps.ssh);
@@ -110,7 +116,7 @@ export function createProgram(deps: ProgramDeps = {}): Command {
   addSshOptions(
     program
       .command('scp')
-      .description(`Copy files to or from an EC2 instance through Session Manager. ${passThroughNote}`)
+      .description(`Copy files to or from an EC2 instance through Session Manager. ${scpNote}`)
       .argument('[args...]', 'scp arguments; exactly one side is [user@]instance:path'),
   ).action(async (args: string[], opts: SshOptions) => {
     lastExitCode = await runScp(args, opts, deps.scp);

@@ -4,6 +4,30 @@ Automated tests cover the logic with fakes; these steps exercise the real sessio
 terminals. Run them before a release, against a profile with two instances you can reach (one Ubuntu, one Amazon
 Linux work well) and, for `exec`, an ECS service with `enableExecuteCommand` on.
 
+## Test environment
+
+`test-infra/ssm-commander-test.yaml` is a CloudFormation template that creates everything these steps need and
+nothing the account keeps: a VPC of its own with one public subnet, two `t3.micro` instances (Ubuntu 24.04 and
+Amazon Linux 2023) registered with Systems Manager, and a Fargate cluster with the service `api` (nginx, execute
+command on) plus, by default, `noexec` (execute command off) and `noperm` (task role without the `ssmmessages`
+actions) for the doctor checks. `test-infra/stack.sh` wraps the AWS CLI calls:
+
+```bash
+sh test-infra/stack.sh up -p <profile> -r <region> KeyName=<key pair>   # about 3 minutes; KeyName only for ssh/scp
+sh test-infra/stack.sh outputs -p <profile> -r <region>                 # the names used below
+sh test-infra/stack.sh down -p <profile> -r <region>                    # deletes everything, about 5 minutes
+```
+
+Parameters (`Key=Value` after `up`): `NamePrefix` (default `ssm-commander-test`; the instances are named
+`<prefix>-ubuntu` and `<prefix>-al2023`, the cluster `<prefix>`), `CreateEc2` and `CreateEcs` (`false` skips that
+half), `EcsFixtures=minimal` (the `api` service only), `InstanceType` with matching `UbuntuAmi` and
+`AmazonLinuxAmi` for arm64 types. For the ssh and scp steps pass the key after the target, with the file in mode
+0600 (ssh ignores a key other users can read): `ssm-commander ssh --profile <profile> ubuntu@<prefix>-ubuntu -i
+<key.pem>`. While the stack is up, the instances fall inside the 12-month free tier, but
+Fargate has none: the three services and the public IPv4 addresses together cost a few cents per hour, so delete
+the stack when you are done. If the first `up` in an account fails on a service with "Unable to assume the service
+linked role", ECS was still creating its service-linked role; run `up` again.
+
 ## EC2 (connect, forward, ssh, scp)
 
 - [ ] `ssm-commander doctor -p <profile>` prints ✔ on every line.

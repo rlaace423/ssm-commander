@@ -200,7 +200,8 @@ npm run build       # esbuild → dist/
 ```
 
 Design and implementation notes live under `docs/superpowers/`; the release checklist that exercises the real
-plugin and AWS APIs is [docs/manual-verification.md](docs/manual-verification.md).
+plugin and AWS APIs is [docs/manual-verification.md](docs/manual-verification.md); `test-infra/` holds a CloudFormation
+template, with `stack.sh` to create and delete it, for the throwaway instances and ECS services that checklist uses.
 
 ## License
 

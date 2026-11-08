@@ -1,0 +1,307 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Throwaway fixtures for verifying ssm-commander by hand: two small EC2 instances reachable through Session
+  Manager and a Fargate cluster whose services exercise ECS Exec (working, exec disabled, task role without
+  ssmmessages). Everything lives in its own VPC so that deleting the stack removes it all. See
+  docs/manual-verification.md.
+
+Parameters:
+  NamePrefix:
+    Type: String
+    Default: ssm-commander-test
+    Description: Prefix of the instance Name tags and name of the ECS cluster.
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9-]{0,40}'
+  CreateEc2:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: Create the two EC2 instances (connect, forward, ssh, scp, doctor).
+  CreateEcs:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: Create the Fargate cluster and services (exec, forward --target ecs:..., doctor --ecs).
+  EcsFixtures:
+    Type: String
+    Default: full
+    AllowedValues: [full, minimal]
+    Description: >-
+      full adds the "noexec" (execute command off) and "noperm" (task role without ssmmessages) services next
+      to "api"; minimal runs "api" only.
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    Description: EC2 instance type; t3.micro is in the 12-month free tier. Pick arm64 AMIs below for t4g types.
+  UbuntuAmi:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id
+    Description: Ubuntu AMI (the SSM agent ships with the Canonical images).
+  AmazonLinuxAmi:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    Description: Amazon Linux 2023 AMI (the SSM agent is preinstalled).
+  KeyName:
+    Type: String
+    Default: ''
+    Description: >-
+      Existing EC2 key pair for the ssh and scp checks (ssm-commander ssh -i <key> user@<name>); leave empty
+      to skip. The ubuntu user on Ubuntu, ec2-user on Amazon Linux.
+  VpcCidr:
+    Type: String
+    Default: 10.42.0.0/24
+    Description: CIDR of the private VPC the fixtures live in (also used for its single public subnet).
+
+Conditions:
+  Ec2: !Equals [!Ref CreateEc2, 'true']
+  Ecs: !Equals [!Ref CreateEcs, 'true']
+  DoctorCases: !And [!Condition Ecs, !Equals [!Ref EcsFixtures, full]]
+  HasKey: !Not [!Equals [!Ref KeyName, '']]
+
+Resources:
+  # --- Network: a VPC of its own so that the stack owns everything it creates -------------------------------
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags: [{ Key: Name, Value: !Ref NamePrefix }]
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags: [{ Key: Name, Value: !Ref NamePrefix }]
+  GatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref InternetGateway
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: !Ref VpcCidr
+      MapPublicIpOnLaunch: true
+      Tags: [{ Key: Name, Value: !Sub '${NamePrefix}-public' }]
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags: [{ Key: Name, Value: !Ref NamePrefix }]
+  DefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: GatewayAttachment
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  SubnetRouteTable:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref RouteTable
+  # Session Manager and ECS Exec only need outbound HTTPS; nothing listens for inbound connections.
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub '${NamePrefix}: outbound HTTPS only (Session Manager, ECR Public)'
+      VpcId: !Ref Vpc
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      Tags: [{ Key: Name, Value: !Ref NamePrefix }]
+
+  # --- EC2: one Ubuntu and one Amazon Linux instance registered with Systems Manager ----------------------
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Condition: Ec2
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore'
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Condition: Ec2
+    Properties:
+      Roles: [!Ref InstanceRole]
+  UbuntuInstance:
+    Type: AWS::EC2::Instance
+    Condition: Ec2
+    Properties:
+      ImageId: !Ref UbuntuAmi
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref InstanceProfile
+      KeyName: !If [HasKey, !Ref KeyName, !Ref 'AWS::NoValue']
+      MetadataOptions: { HttpTokens: required }
+      NetworkInterfaces:
+        - DeviceIndex: '0'
+          AssociatePublicIpAddress: true
+          SubnetId: !Ref PublicSubnet
+          GroupSet: [!Ref SecurityGroup]
+      Tags: [{ Key: Name, Value: !Sub '${NamePrefix}-ubuntu' }]
+  AmazonLinuxInstance:
+    Type: AWS::EC2::Instance
+    Condition: Ec2
+    Properties:
+      ImageId: !Ref AmazonLinuxAmi
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref InstanceProfile
+      KeyName: !If [HasKey, !Ref KeyName, !Ref 'AWS::NoValue']
+      MetadataOptions: { HttpTokens: required }
+      NetworkInterfaces:
+        - DeviceIndex: '0'
+          AssociatePublicIpAddress: true
+          SubnetId: !Ref PublicSubnet
+          GroupSet: [!Ref SecurityGroup]
+      Tags: [{ Key: Name, Value: !Sub '${NamePrefix}-al2023' }]
+
+  # --- ECS: Fargate services that exercise ECS Exec --------------------------------------------------------
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Condition: Ecs
+    Properties:
+      ClusterName: !Ref NamePrefix
+  # What ECS Exec needs on the task side: the four ssmmessages channel actions.
+  TaskRole:
+    Type: AWS::IAM::Role
+    Condition: Ecs
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ecs-exec-channels
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssmmessages:CreateControlChannel
+                  - ssmmessages:CreateDataChannel
+                  - ssmmessages:OpenControlChannel
+                  - ssmmessages:OpenDataChannel
+                Resource: '*'
+  # A role that lacks those actions: the exec agent still reports RUNNING, only doctor --ecs tells them apart.
+  TaskRoleWithoutChannels:
+    Type: AWS::IAM::Role
+    Condition: DoctorCases
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+  # nginx:alpine has /bin/sh for exec and listens on port 80 for the port-forwarding check (curl localhost:<port>).
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Condition: Ecs
+    Properties:
+      Family: !Sub '${NamePrefix}-api'
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: '256'
+      Memory: '512'
+      RuntimePlatform: { CpuArchitecture: ARM64, OperatingSystemFamily: LINUX }
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      ContainerDefinitions:
+        - Name: app
+          Image: public.ecr.aws/docker/library/nginx:alpine
+          Essential: true
+          PortMappings: [{ ContainerPort: 80, Protocol: tcp }]
+          LinuxParameters: { InitProcessEnabled: true }
+  TaskDefinitionWithoutChannels:
+    Type: AWS::ECS::TaskDefinition
+    Condition: DoctorCases
+    Properties:
+      Family: !Sub '${NamePrefix}-noperm'
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: '256'
+      Memory: '512'
+      RuntimePlatform: { CpuArchitecture: ARM64, OperatingSystemFamily: LINUX }
+      TaskRoleArn: !GetAtt TaskRoleWithoutChannels.Arn
+      ContainerDefinitions:
+        - Name: app
+          Image: public.ecr.aws/docker/library/nginx:alpine
+          Essential: true
+          PortMappings: [{ ContainerPort: 80, Protocol: tcp }]
+          LinuxParameters: { InitProcessEnabled: true }
+  ApiService:
+    Type: AWS::ECS::Service
+    Condition: Ecs
+    DependsOn: DefaultRoute
+    Properties:
+      ServiceName: api
+      Cluster: !Ref Cluster
+      TaskDefinition: !Ref TaskDefinition
+      LaunchType: FARGATE
+      PlatformVersion: LATEST
+      DesiredCount: 1
+      EnableExecuteCommand: true
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets: [!Ref PublicSubnet]
+          SecurityGroups: [!Ref SecurityGroup]
+  NoExecService:
+    Type: AWS::ECS::Service
+    Condition: DoctorCases
+    DependsOn: DefaultRoute
+    Properties:
+      ServiceName: noexec
+      Cluster: !Ref Cluster
+      TaskDefinition: !Ref TaskDefinition
+      LaunchType: FARGATE
+      PlatformVersion: LATEST
+      DesiredCount: 1
+      EnableExecuteCommand: false
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets: [!Ref PublicSubnet]
+          SecurityGroups: [!Ref SecurityGroup]
+  NoPermService:
+    Type: AWS::ECS::Service
+    Condition: DoctorCases
+    DependsOn: DefaultRoute
+    Properties:
+      ServiceName: noperm
+      Cluster: !Ref Cluster
+      TaskDefinition: !Ref TaskDefinitionWithoutChannels
+      LaunchType: FARGATE
+      PlatformVersion: LATEST
+      DesiredCount: 1
+      EnableExecuteCommand: true
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets: [!Ref PublicSubnet]
+          SecurityGroups: [!Ref SecurityGroup]
+
+Outputs:
+  UbuntuInstance:
+    Condition: Ec2
+    Description: ssm-commander connect <this name> (user ubuntu for ssh/scp)
+    Value: !Sub '${NamePrefix}-ubuntu (${UbuntuInstance})'
+  AmazonLinuxInstance:
+    Condition: Ec2
+    Description: ssm-commander connect <this name> (user ec2-user for ssh/scp)
+    Value: !Sub '${NamePrefix}-al2023 (${AmazonLinuxInstance})'
+  ExecTarget:
+    Condition: Ecs
+    Description: ssm-commander exec <this target>; forward --target ecs:<this target> --remote-host localhost --remote-port 80
+    Value: !Sub '${NamePrefix}/api'
+  DoctorTargets:
+    Condition: DoctorCases
+    Description: ssm-commander doctor --ecs <target> should fail on both
+    Value: !Sub '${NamePrefix}/noexec (execute command off), ${NamePrefix}/noperm (task role without ssmmessages)'

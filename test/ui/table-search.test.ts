@@ -17,6 +17,7 @@ describe('tableSearch', () => {
     expect(screen).toContain('FOOTER-LINE');
     expect(screen.indexOf('HEADER-LINE')).toBeLessThan(screen.indexOf('alpha'));
     expect(screen.indexOf('beta')).toBeLessThan(screen.indexOf('FOOTER-LINE'));
+    expect(screen).toContain('(type to search, ↑↓ to move, Enter to select)');
     events.keypress('down');
     events.keypress('enter');
     expect(await answer).toBe(2);

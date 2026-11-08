@@ -37,7 +37,9 @@ describe('resolveContext', () => {
   test('prompts for profile when several profiles exist and nothing is set', async () => {
     const deps = makeDeps();
     const ctx = await resolveContext({}, deps);
-    expect(deps.requireTty).toHaveBeenCalled();
+    expect(deps.requireTty).toHaveBeenCalledWith(
+      expect.objectContaining({ what: 'Choosing a profile', hint: expect.stringContaining('--profile') }),
+    );
     expect(deps.promptProfile).toHaveBeenCalledWith(['default', 'work']);
     expect(ctx.profile).toBe('work');
     expect(ctx.region).toBe('us-west-2');
@@ -61,7 +63,9 @@ describe('resolveContext', () => {
   test('prompts for region when none can be resolved', async () => {
     const deps = makeDeps();
     const ctx = await resolveContext({ profile: 'default' }, deps);
-    expect(deps.requireTty).toHaveBeenCalled();
+    expect(deps.requireTty).toHaveBeenCalledWith(
+      expect.objectContaining({ what: 'Choosing a region', hint: expect.stringContaining('--region') }),
+    );
     expect(deps.listRegions).toHaveBeenCalledWith(provider);
     expect(deps.promptRegion).toHaveBeenCalledWith(['eu-west-1', 'us-east-1']);
     expect(ctx.region).toBe('eu-west-1');

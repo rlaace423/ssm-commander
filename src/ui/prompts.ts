@@ -1,12 +1,32 @@
 import { confirm, password, search, select } from '@inquirer/prompts';
 import { CliError } from '../errors.js';
+import { terminalTableWidth } from './table.js';
 
 /** Prompts render on stderr so stdout stays clean for piping and for ssh ProxyCommand mode. */
 export const promptIo = { output: process.stderr };
 
-export function requireTty(proc: { stdin: { isTTY?: boolean }; stdout: { isTTY?: boolean } } = process): void {
+/** Two characters of prompt indent plus the cursor column sit in front of every table line. */
+const PROMPT_OVERHEAD = 4;
+
+/** The width a table may take inside a prompt on the current terminal; undefined when there is no terminal. */
+export function promptTableWidth(): number | undefined {
+  return terminalTableWidth(promptIo.output, PROMPT_OVERHEAD);
+}
+
+/** What a prompt is for, so a command run behind a pipe can say what it would have asked and how to avoid it. */
+export interface TtyNeed {
+  /** Subject of "... needs an interactive terminal", e.g. "Picking an instance". */
+  what: string;
+  /** The options or settings that make the prompt unnecessary. */
+  hint?: string;
+}
+
+export function requireTty(
+  need: TtyNeed = { what: 'This command' },
+  proc: { stdin: { isTTY?: boolean }; stdout: { isTTY?: boolean } } = process,
+): void {
   if (!proc.stdin.isTTY || !proc.stdout.isTTY) {
-    throw new CliError('This command needs an interactive terminal; pass --profile/--region/target explicitly');
+    throw new CliError(`${need.what} needs an interactive terminal`, need.hint);
   }
 }
 

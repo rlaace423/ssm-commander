@@ -63,3 +63,19 @@ describe('matchesTerm', () => {
     expect(matchesTerm(row({ name: null, instanceId: 'i-1', privateIp: null, publicIp: null }), 'x')).toBe(false);
   });
 });
+
+describe('buildInstanceChoices in a narrow terminal', () => {
+  const rows = [row({ instanceId: 'i-1', name: 'web', publicIp: '3.3.3.3' })];
+  const headerOf = (maxWidth?: number) => buildInstanceChoices(rows, [], maxWidth).header;
+
+  test('drops Public IP first, then Type, then Private IP; Name, Instance Id, State, SSM and Note stay', () => {
+    const full = headerOf();
+    expect(full).toContain('Public IP');
+    const wide = headerOf(75);
+    expect(wide).not.toContain('Public IP');
+    expect(wide).toContain('Type');
+    const narrow = headerOf(60);
+    for (const gone of ['Public IP', 'Type', 'Private IP']) expect(narrow).not.toContain(gone);
+    for (const kept of ['Name', 'Instance Id', 'State', 'SSM', 'Note']) expect(narrow).toContain(kept);
+  });
+});

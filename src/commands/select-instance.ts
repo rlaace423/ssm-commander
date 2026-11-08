@@ -1,10 +1,22 @@
 import { AccessDeniedError, CliError } from '../errors.js';
 import { isInstanceId, resolveTarget } from '../target.js';
 import type { InstanceRow } from '../types.js';
+import { PICK_INSTANCE_NEED } from '../ui/instance-picker.js';
+import type { TtyNeed } from '../ui/prompts.js';
 
 export interface SelectInstanceDeps {
   pickInstance: (rows: InstanceRow[], opts: { message: string; recentIds: string[] }) => Promise<InstanceRow>;
   info: (message: string) => void;
+  /** Throws a CliError when there is no terminal to pick from. */
+  requireTty: (need?: TtyNeed) => void;
+}
+
+export interface SelectInstanceOptions {
+  message: string;
+  recentIds: string[];
+  /** Where the rows came from, for the messages when a target is not found. */
+  profile: string;
+  region: string;
 }
 
 /**
@@ -15,10 +27,11 @@ export async function selectInstance(
   target: string | undefined,
   rows: InstanceRow[],
   pickRows: InstanceRow[],
-  opts: { message: string; recentIds: string[] },
+  opts: SelectInstanceOptions,
   deps: SelectInstanceDeps,
 ): Promise<InstanceRow> {
-  if (target === undefined) return deps.pickInstance(assertSomethingToPick(rows, pickRows), opts);
+  const where = `in ${opts.region} (profile ${opts.profile})`;
+  if (target === undefined) return deps.pickInstance(assertSomethingToPick(rows, pickRows, where), opts);
 
   const resolution = resolveTarget(target, rows);
   switch (resolution.kind) {
@@ -31,9 +44,27 @@ export async function selectInstance(
     case 'ambiguous':
       deps.info(`Several instances are named "${target}"; choose one`);
       return deps.pickInstance(resolution.rows, opts);
-    case 'not-found':
-      deps.info(`No instance named "${target}"; choose from the list`);
-      return deps.pickInstance(assertSomethingToPick(rows, pickRows), opts);
+    case 'not-found': {
+      // An id is exact: offering the list would only show that it is not there.
+      if (isInstanceId(target)) {
+        throw new CliError(
+          `Instance ${target} was not found ${where}`,
+          'Instance ids belong to one region: check --region and --profile',
+        );
+      }
+      const notFound = new CliError(
+        `No instance named "${target}" ${where}`,
+        'Names are matched ignoring case; check the name, the region and the profile',
+      );
+      if (rows.length === 0) throw new CliError(`No instances found ${where}`);
+      try {
+        deps.requireTty(PICK_INSTANCE_NEED); // without a terminal the list cannot be offered, so stop at the fact
+      } catch {
+        throw notFound;
+      }
+      deps.info(`${notFound.message}; choose from the list`);
+      return deps.pickInstance(assertSomethingToPick(rows, pickRows, where), opts);
+    }
   }
 }
 
@@ -86,9 +117,10 @@ export async function rowsOrTrustedId(
   }
 }
 
-/** `--connectable` can hide every row; say so instead of claiming the account has no instances. */
-function assertSomethingToPick(rows: InstanceRow[], pickRows: InstanceRow[]): InstanceRow[] {
-  if (pickRows.length === 0 && rows.length > 0) {
+/** `--connectable` can hide every row; say so instead of claiming the region has no instances. */
+function assertSomethingToPick(rows: InstanceRow[], pickRows: InstanceRow[], where: string): InstanceRow[] {
+  if (rows.length === 0) throw new CliError(`No instances found ${where}`);
+  if (pickRows.length === 0) {
     throw new CliError(`No connectable instances (${rows.length} listed); run without --connectable to see them`);
   }
   return pickRows;

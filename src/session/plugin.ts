@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import path from 'node:path';
-import { PluginNotFoundError } from '../errors.js';
+import { CliError, PluginNotFoundError } from '../errors.js';
 import type { SessionStart, StartSessionInput } from '../types.js';
 import { type SpawnInheritedDeps, spawnInherited } from './spawn-inherited.js';
 
@@ -20,7 +20,14 @@ export function findPluginPath(input: {
   exists: (p: string) => boolean;
 }): string | null {
   const override = input.env.SSM_COMMANDER_PLUGIN_PATH;
-  if (override && input.exists(override)) return override;
+  if (override) {
+    if (input.exists(override)) return override;
+    // A stale variable would otherwise be ignored in silence and another plugin used in its place.
+    throw new CliError(
+      `SSM_COMMANDER_PLUGIN_PATH points to "${override}", which does not exist`,
+      'Fix or unset the variable; without it session-manager-plugin is looked up on PATH',
+    );
+  }
   const win = input.platform === 'win32';
   const pathModule = win ? path.win32 : path.posix;
   const searchPath = input.env.PATH ?? input.env.Path ?? '';

@@ -31,7 +31,7 @@ import { configDir } from '../storage/paths.js';
 import type { AwsContext, Sender } from '../types.js';
 import { type PickOptions, pickCluster, pickContainer, pickService, pickTask } from '../ui/ecs-picker.js';
 import { info, type Spinner, spinner } from '../ui/output.js';
-import { requireTty } from '../ui/prompts.js';
+import { requireTty, type TtyNeed } from '../ui/prompts.js';
 
 export const DEFAULT_COMMAND = '/bin/sh';
 
@@ -62,7 +62,7 @@ export interface EcsSelectionDeps {
 export interface ExecDeps extends EcsSelectionDeps {
   resolveContext: (opts: { profile?: string; region?: string }) => Promise<AwsContext>;
   runExecSession: (ctx: AwsContext, input: ExecSessionInput) => Promise<number>;
-  requireTty: () => void;
+  requireTty: (need?: TtyNeed) => void;
   info: (message: string) => void;
   spinner: (text: string) => Spinner;
   loadHistory: (dir: string) => Promise<HistoryFile>;
@@ -90,7 +90,7 @@ export function defaultExecDeps(): ExecDeps {
     ...defaultEcsSelectionDeps(),
     resolveContext: (opts) => resolveContext(opts),
     runExecSession: async (ctx, input) => runExecSession(ctx, input, await defaultRunExecDeps(ctx)),
-    requireTty: () => requireTty(),
+    requireTty: (need) => requireTty(need),
     info,
     spinner,
     loadHistory,
@@ -100,15 +100,19 @@ export function defaultExecDeps(): ExecDeps {
   };
 }
 
-export type Step = Pick<ExecDeps, 'spinner' | 'info'> & { profile: string };
+export type Step = Pick<ExecDeps, 'spinner' | 'info'> & { profile: string; region: string };
 
-/** Runs a listing behind a spinner; a denied call keeps its AccessDeniedError and gains the way around it. */
+/**
+ * Runs a listing behind a spinner; a denied call keeps its AccessDeniedError and gains the way around it.
+ * `cluster` names the cluster the call was scoped to, for the message when ECS does not know it.
+ */
 async function listing<T>(
   step: Step,
   text: string,
   action: string,
   skipHint: string | null,
   fn: () => Promise<T>,
+  cluster?: string,
 ): Promise<T> {
   const spin = step.spinner(text);
   try {
@@ -117,7 +121,7 @@ async function listing<T>(
     return result;
   } catch (err) {
     spin.fail(`${text.replace(/\.\.\.$/, '')} failed`);
-    const described = describeAwsError(err, { profile: step.profile, action });
+    const described = describeAwsError(err, { profile: step.profile, region: step.region, action, cluster });
     if (described instanceof AccessDeniedError && skipHint !== null) {
       throw new AccessDeniedError(described.message, `${skipHint}. ${described.hint ?? ''}`.trim());
     }
@@ -162,7 +166,7 @@ async function chooseCluster(
     'Pass --cluster (with --task to skip every listing)',
     () => deps.fetchClusters(ecs),
   );
-  if (clusters.length === 0) throw new CliError('No ECS clusters found');
+  if (clusters.length === 0) throw new CliError(`No ECS clusters found in ${step.region} (profile ${step.profile})`);
   const recentNames = [...new Set(recent.map((key) => key.cluster))];
   const chosen = await pickFrom(
     sortRecentFirst(clusters, recentNames),
@@ -182,8 +186,13 @@ async function findTask(
   deps: EcsSelectionDeps,
 ): Promise<TaskRow> {
   if (cluster !== undefined) {
-    const row = await listing(step, 'Looking up the task...', ECS_IAM_ACTIONS.describeTasks, null, () =>
-      deps.describeTask(ecs, cluster, taskId),
+    const row = await listing(
+      step,
+      'Looking up the task...',
+      ECS_IAM_ACTIONS.describeTasks,
+      null,
+      () => deps.describeTask(ecs, cluster, taskId),
+      cluster,
     );
     if (row === null) throw new CliError(`Task "${taskId}" was not found in cluster "${cluster}"`);
     return row;
@@ -199,6 +208,7 @@ async function findTask(
       ECS_IAM_ACTIONS.describeTasks,
       null,
       () => deps.describeTask(ecs, candidate.name, taskId),
+      candidate.name,
     );
     if (row !== null) return row;
   }
@@ -235,6 +245,7 @@ async function chooseTask(
         service === STANDALONE_SERVICE
           ? tasksOfService(await deps.fetchTasks(ecs, cluster), STANDALONE_SERVICE)
           : deps.fetchTasks(ecs, cluster, service),
+      cluster,
     );
     if (tasks.length === 0) throw new CliError(`No running tasks in service "${service}" of cluster "${cluster}"`);
     return pickFrom(
@@ -252,6 +263,7 @@ async function chooseTask(
     ECS_IAM_ACTIONS.listServices,
     'Pass --service, or --task to connect without listing',
     () => Promise.all([deps.fetchServices(ecs, cluster), deps.fetchTasks(ecs, cluster)]),
+    cluster,
   );
   const rows = summarizeServices(services, tasks);
   if (rows.length === 0) throw new CliError(`No services or running tasks in cluster "${cluster}"`);
@@ -339,7 +351,11 @@ export async function runExec(
   opts: ExecOptions,
   deps: ExecDeps = defaultExecDeps(),
 ): Promise<number> {
-  deps.requireTty(); // the session is interactive; fail before any AWS call
+  // the container command is interactive; fail before any AWS call
+  deps.requireTty({
+    what: 'exec',
+    hint: 'The command runs interactively in the container, so there is nothing to pass instead',
+  });
   const parsed: ExecTarget = target === undefined ? {} : parseExecTarget(target);
   const want: ExecTarget = {
     cluster: opts.cluster ?? parsed.cluster,
@@ -351,7 +367,7 @@ export async function runExec(
   const ctx = await deps.resolveContext({ profile: opts.profile, region: opts.region });
   const history = await deps.loadHistory(deps.configDir);
   const ecs = await deps.ecsClient(ctx);
-  const step: Step = { spinner: deps.spinner, info: deps.info, profile: ctx.profile };
+  const step: Step = { spinner: deps.spinner, info: deps.info, profile: ctx.profile, region: ctx.region };
   const { task, container } = await selectEcsContainer(
     ecs,
     want,
@@ -378,7 +394,7 @@ export async function runExec(
       runtimeId: container.runtimeId,
     });
   } catch (err) {
-    throw describeAwsError(err, { profile: ctx.profile, action: ECS_IAM_ACTIONS.execute });
+    throw describeAwsError(err, { profile: ctx.profile, region: ctx.region, action: ECS_IAM_ACTIONS.execute });
   }
 
   // Tasks are replaced on every deployment; the service is what the next exec comes back to.

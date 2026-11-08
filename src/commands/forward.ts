@@ -21,8 +21,8 @@ import type { AwsContext, InstanceRow, StartSessionInput } from '../types.js';
 import { type DescriptionInputConfig, descriptionInput } from '../ui/description-input.js';
 import { pickInstance } from '../ui/instance-picker.js';
 import { info, type Spinner, spinner, warn } from '../ui/output.js';
-import { confirmOverwrite, promptIo, requireTty } from '../ui/prompts.js';
-import { createTable } from '../ui/table.js';
+import { confirmOverwrite, promptIo, requireTty, type TtyNeed } from '../ui/prompts.js';
+import { createTable, terminalTableWidth } from '../ui/table.js';
 import { fetchInstances } from './connect.js';
 import { defaultEcsSelectionDeps, type EcsSelectionDeps, selectEcsContainer } from './exec.js';
 import { rowsOrTrustedId, selectInstance } from './select-instance.js';
@@ -86,7 +86,7 @@ export interface ForwardDeps {
   configDir: string;
   descriptionInput: (config: DescriptionInputConfig) => Promise<string>;
   confirmOverwrite: (name: string) => Promise<boolean>;
-  requireTty: () => void;
+  requireTty: (need?: TtyNeed) => void;
   info: (message: string) => void;
   warn: (message: string) => void;
   writeStdout: (text: string) => void;
@@ -107,7 +107,7 @@ export function defaultForwardDeps(): ForwardDeps {
     configDir: configDir(),
     descriptionInput: (config) => descriptionInput(config, promptIo),
     confirmOverwrite,
-    requireTty: () => requireTty(),
+    requireTty: (need) => requireTty(need),
     info,
     warn,
     writeStdout: (text) => {
@@ -118,12 +118,22 @@ export function defaultForwardDeps(): ForwardDeps {
   };
 }
 
-function parsePortOption(value: string | undefined): number | undefined {
+function parsePortOption(name: string, value: string | undefined): number | undefined {
   if (value === undefined) return undefined;
-  const valid = validatePort(value);
-  if (valid !== true) throw new CliError(valid);
+  if (validatePort(value) !== true) {
+    throw new CliError(`${name} must be a port number between 1 and 65535 (got "${value}")`);
+  }
   return Number(value);
 }
+
+const PICK_HOP_NEED: TtyNeed = {
+  what: 'Picking an instance',
+  hint: 'Pass --target (an instance, or ecs:cluster/service) or a preset name',
+};
+const SETTINGS_NEED: TtyNeed = {
+  what: 'Asking for the forward settings',
+  hint: 'Pass --remote-host, --remote-port and --local-port',
+};
 
 function describeHop(preset: ForwardPreset): string {
   return preset.kind === 'ecs'
@@ -131,14 +141,14 @@ function describeHop(preset: ForwardPreset): string {
     : `${preset.instanceName ?? preset.instanceId} (${preset.instanceId})`;
 }
 
-export function renderPresetList(file: PresetsFile): string {
+export function renderPresetList(file: PresetsFile, maxWidth?: number): string {
   if (file.presets.length === 0) return 'No presets saved\n';
   const table = createTable(
     [
       { key: 'name', header: 'Name' },
-      { key: 'profile', header: 'Profile' },
-      { key: 'region', header: 'Region' },
-      { key: 'through', header: 'Through' },
+      { key: 'profile', header: 'Profile', dropOrder: 2 },
+      { key: 'region', header: 'Region', dropOrder: 1 },
+      { key: 'through', header: 'Through', shrink: true },
       { key: 'forward', header: 'Forward' },
     ],
     file.presets,
@@ -152,6 +162,7 @@ export function renderPresetList(file: PresetsFile): string {
           return String(preset[key as 'name' | 'profile' | 'region']);
       }
     },
+    { maxWidth },
   );
   return `${[table.header, ...table.lines.map((line) => line.text), table.footer].join('\n')}\n`;
 }
@@ -180,7 +191,7 @@ async function ec2Hop(ctx: AwsContext, opts: ForwardOptions, deps: ForwardDeps):
       opts.target,
       listing.rows,
       pickRows,
-      { message: 'Select an instance to forward through', recentIds },
+      { message: 'Select an instance to forward through', recentIds, profile: ctx.profile, region: ctx.region },
       deps,
     ));
   return { kind: 'ec2', instanceId: row.instanceId, name: row.name };
@@ -207,7 +218,7 @@ async function ecsHop(
       auto: preset !== undefined,
       recent,
     },
-    { spinner: deps.spinner, info: deps.info, profile: ctx.profile },
+    { spinner: deps.spinner, info: deps.info, profile: ctx.profile, region: ctx.region },
     deps.ecs,
   );
   return {
@@ -227,10 +238,17 @@ export async function runForward(
   opts: ForwardOptions,
   deps: ForwardDeps = defaultForwardDeps(),
 ): Promise<number> {
+  if (opts.list && opts.delete !== undefined) throw new CliError('--list and --delete cannot be combined');
+  if (opts.ecs && opts.target !== undefined) {
+    throw new CliError(
+      '--ecs and --target cannot be combined',
+      'Write the task as --target ecs:cluster/service[/task-id], or drop --target to pick from lists',
+    );
+  }
   const presets = await deps.loadPresets(deps.configDir);
 
   if (opts.list) {
-    deps.writeStdout(renderPresetList(presets));
+    deps.writeStdout(renderPresetList(presets, terminalTableWidth(process.stdout, 0)));
     return 0;
   }
   if (opts.delete !== undefined) {
@@ -247,13 +265,13 @@ export async function runForward(
       'Run "ssm-commander forward --list" to see saved presets',
     );
   }
-  const remotePortOption = parsePortOption(opts.remotePort);
-  const localPortOption = parsePortOption(opts.localPort);
+  const remotePortOption = parsePortOption('--remote-port', opts.remotePort);
+  const localPortOption = parsePortOption('--local-port', opts.localPort);
   const viaEcs =
     preset !== undefined
       ? presetKind(preset) === 'ecs'
       : opts.ecs === true || (opts.target !== undefined && isEcsTarget(opts.target));
-  if (preset === undefined && opts.target === undefined) deps.requireTty(); // the picker needs a terminal
+  if (preset === undefined && opts.target === undefined) deps.requireTty(PICK_HOP_NEED); // before any AWS call
 
   const ctx = await deps.resolveContext({
     profile: opts.profile ?? preset?.profile,
@@ -272,7 +290,9 @@ export async function runForward(
   const knownHost = opts.remoteHost ?? preset?.remoteHost;
   const knownRemotePort = remotePortOption ?? preset?.remotePort;
   const knownLocalPort = localPortOption ?? preset?.localPort;
-  if (knownHost === undefined || knownRemotePort === undefined || knownLocalPort === undefined) deps.requireTty();
+  if (knownHost === undefined || knownRemotePort === undefined || knownLocalPort === undefined) {
+    deps.requireTty(SETTINGS_NEED);
+  }
 
   const remoteHost =
     knownHost ??
@@ -307,7 +327,10 @@ export async function runForward(
   if (opts.save !== undefined) {
     let overwrite = true;
     if (findPreset(presets, opts.save) !== undefined) {
-      deps.requireTty();
+      deps.requireTty({
+        what: `Confirming the overwrite of preset "${opts.save}"`,
+        hint: 'Choose another --save name, or delete the preset first with --delete',
+      });
       overwrite = await deps.confirmOverwrite(opts.save);
     }
     if (overwrite) {
@@ -332,6 +355,6 @@ export async function runForward(
   try {
     return await deps.runSession(ctx, buildForwardSessionInput(target, remoteHost, remotePort, localPort));
   } catch (err) {
-    throw describeAwsError(err, { profile: ctx.profile, action: IAM_ACTIONS.ssmStart });
+    throw describeAwsError(err, { profile: ctx.profile, region: ctx.region, action: IAM_ACTIONS.ssmStart });
   }
 }

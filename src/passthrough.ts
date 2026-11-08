@@ -1,6 +1,16 @@
 import { CliError } from './errors.js';
 
 export const DEFAULT_SSH_USER = 'ec2-user';
+
+/**
+ * The login name an AMI family ships with, from the platform name SSM reports; `ec2-user` covers Amazon Linux,
+ * RHEL, SUSE and the unknown case (no SSM information, or a hybrid node).
+ */
+export function defaultSshUser(platform: string | null): string {
+  if (platform !== null && /ubuntu/i.test(platform)) return 'ubuntu';
+  if (platform !== null && /debian/i.test(platform)) return 'admin';
+  return DEFAULT_SSH_USER;
+}
 /** ssh options that consume the next argv token as their value. */
 export const SSH_VALUE_OPTIONS = new Set([
   '-B',
@@ -156,6 +166,35 @@ export function buildScpArgs(input: {
 }
 
 const OWN_LONG_OPTIONS = /^--(profile|region|user|identity|port|connectable)(=|$)/;
+
+export const SSH_USAGE =
+  'ssm-commander ssh [--profile <profile>] [--region <region>] [--user <user>] <target> [ssh options] [command]';
+
+/** The other commands take -p and -r; here those letters belong to ssh, so say what to write instead. */
+export function assertSshTargetFirst(first: string): void {
+  if (!first.startsWith('-')) return;
+  const own = first === '-p' ? '--profile' : first === '-r' ? '--region' : null;
+  if (own !== null) {
+    throw new CliError(
+      `${first} after "ssh" would be ssh's own option; ssm-commander ssh takes ${own} (written in full) before the target`,
+      SSH_USAGE,
+    );
+  }
+  throw new CliError(`The target must come first: ${SSH_USAGE}`);
+}
+
+/** `-p` after the target is ssh's port; a non-numeric value is almost always a profile name that landed there. */
+export function assertSshPortIsNumber(options: string[]): void {
+  for (let i = 0; i < options.length - 1; i++) {
+    const value = options[i + 1] as string;
+    if (options[i] === '-p' && !/^\d+$/.test(value)) {
+      throw new CliError(
+        `-p ${value} is not a port for ssh; to choose the AWS profile write --profile ${value} before the target`,
+        SSH_USAGE,
+      );
+    }
+  }
+}
 
 /** ssm-commander's own options are only recognised before the target; catch the common slip of placing them after it. */
 export function assertOwnOptionsFirst(passthrough: string[]): void {

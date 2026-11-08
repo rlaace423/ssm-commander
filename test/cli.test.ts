@@ -32,6 +32,25 @@ describe('createProgram', () => {
     expect(program.options.map((o) => o.long)).toContain('--debug');
   });
 
+  test('every command accepts --debug after its name, hidden from help', async () => {
+    const program = createProgram();
+    for (const name of ['connect', 'exec', 'forward', 'ssh', 'scp', 'doctor']) {
+      const debug = program.commands.find((c) => c.name() === name)?.options.find((o) => o.long === '--debug');
+      expect(debug, name).toBeDefined();
+      expect(debug?.hidden, name).toBe(true);
+    }
+    const resolveContext = vi.fn().mockRejectedValue(new Error('stop here'));
+    const connect = { resolveContext, requireTty: () => {} } as unknown as ConnectDeps;
+    const err = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    expect(await main(['node', 'cli', 'connect', '--debug', 'web-1'], { connect })).toBe(1);
+    expect(resolveContext).toHaveBeenCalled();
+    const output = err.mock.calls.map((c) => String(c[0])).join('');
+    expect(output).not.toContain('unknown option');
+    expect(output).toContain('stop here');
+    expect(output).toContain('at '); // the stack trace, which only --debug prints
+    err.mockRestore();
+  });
+
   test('registers exec with the ECS options', () => {
     const exec = createProgram().commands.find((c) => c.name() === 'exec');
     expect(exec).toBeDefined();
@@ -70,7 +89,7 @@ describe('createProgram', () => {
 
   test('registers doctor with a profile option', () => {
     const doctor = createProgram().commands.find((c) => c.name() === 'doctor');
-    expect(doctor?.options.map((o) => o.long)).toEqual(['--profile', '--region', '--ecs']);
+    expect(doctor?.options.filter((o) => !o.hidden).map((o) => o.long)).toEqual(['--profile', '--region', '--ecs']);
   });
 
   test('registers --ecs and --region on doctor', () => {
@@ -122,5 +141,49 @@ describe('main', () => {
     expect(await main(['node', 'cli', 'forward', '--delete', 'nope'])).toBe(1);
     expect(err.mock.calls.map((c) => String(c[0])).join('')).toContain('Preset "nope" was not found');
     vi.unstubAllEnvs();
+  });
+});
+
+describe('connect as the default command', () => {
+  const row = {
+    instanceId: 'i-1',
+    name: 'web',
+    state: 'running',
+    ssm: 'Online',
+    instanceType: null,
+    privateIp: null,
+    publicIp: null,
+    platform: null,
+    connectable: true,
+    reason: null,
+  };
+  const ctx = { profile: 'default', region: 'ap-northeast-2', credentials: async () => ({ accessKeyId: 'a', secretAccessKey: 'b' }) };
+  const makeDeps = () =>
+    ({
+      resolveContext: vi.fn(async () => ctx),
+      listInstances: vi.fn(async () => ({ rows: [row], ssmUnavailable: false })),
+      pickInstance: vi.fn(async () => row),
+      runSession: vi.fn(async () => 0),
+      loadHistory: vi.fn(async () => ({ version: 1, entries: [] })),
+      saveHistory: vi.fn(async () => {}),
+      configDir: '/tmp/ssm-commander-test',
+      now: () => new Date(),
+      warn: vi.fn(),
+      info: vi.fn(),
+      spinner: () => ({ stop() {}, fail() {} }),
+      requireTty: vi.fn(),
+    }) as unknown as ConnectDeps;
+
+  test('a mistyped command word is reported as such, but only when connect was implied', async () => {
+    const err = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const implied = makeDeps();
+    expect(await main(['node', 'cli', 'conect', '-p', 'default'], { connect: implied })).toBe(1);
+    expect(err.mock.calls.map((c) => String(c[0])).join('')).toContain('Unknown command "conect"');
+    expect(implied.runSession).not.toHaveBeenCalled();
+
+    const explicit = makeDeps();
+    expect(await main(['node', 'cli', 'connect', 'conect', '-p', 'default'], { connect: explicit })).toBe(0);
+    expect(explicit.pickInstance).toHaveBeenCalled();
+    err.mockRestore();
   });
 });

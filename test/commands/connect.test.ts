@@ -127,6 +127,9 @@ describe('runConnect', () => {
     const all = makeDeps();
     await runConnect(undefined, {}, all);
     expect(all.pickInstance).toHaveBeenCalledWith(rows, expect.objectContaining({ recentIds: [] }));
+    expect(all.requireTty).toHaveBeenCalledWith(
+      expect.objectContaining({ what: 'Picking an instance', hint: expect.stringContaining('instance') }),
+    );
     const only = makeDeps();
     await runConnect(undefined, { connectable: true }, only);
     expect(only.pickInstance).toHaveBeenCalledWith([webA, web1, web2], expect.anything());
@@ -152,11 +155,50 @@ describe('runConnect', () => {
     await runConnect('i-1', {}, deps); // an explicit target needs no terminal
   });
 
-  test('tells the user and opens the picker when the target is not found', async () => {
+  test('tells the user where it looked and opens the picker when a name is not found', async () => {
     const deps = makeDeps();
     await runConnect('zzz', {}, deps);
-    expect(deps.info).toHaveBeenCalledWith('No instance named "zzz"; choose from the list');
+    expect(deps.info).toHaveBeenCalledWith(
+      'No instance named "zzz" in ap-northeast-2 (profile default); choose from the list',
+    );
     expect(deps.pickInstance).toHaveBeenCalledWith(rows, expect.anything());
+  });
+
+  test('a name is matched ignoring case', async () => {
+    const deps = makeDeps();
+    await runConnect('WEB-A', {}, deps);
+    expect(deps.runSession).toHaveBeenCalledWith(ctx, { Target: 'i-1' });
+    expect(deps.pickInstance).not.toHaveBeenCalled();
+  });
+
+  test('an instance id that is not in the region fails with the region and profile, without the picker', async () => {
+    const deps = makeDeps();
+    const err = await runConnect('i-0123456789abcdef0', {}, deps).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(CliError);
+    expect((err as CliError).message).toBe('Instance i-0123456789abcdef0 was not found in ap-northeast-2 (profile default)');
+    expect((err as CliError).hint).toContain('region');
+    expect(deps.pickInstance).not.toHaveBeenCalled();
+  });
+
+  test('without a terminal a missing name is a one-line error instead of an offer to pick', async () => {
+    const deps = makeDeps({
+      requireTty: () => {
+        throw new CliError('no tty');
+      },
+    });
+    await expect(runConnect('zzz', {}, deps)).rejects.toThrow(
+      'No instance named "zzz" in ap-northeast-2 (profile default)',
+    );
+    expect(deps.pickInstance).not.toHaveBeenCalled();
+  });
+
+  test('an empty region says so with the region and profile, for a name and for the picker alike', async () => {
+    const deps = makeDeps({ listInstances: vi.fn(async () => ({ rows: [], ssmUnavailable: false })) });
+    await expect(runConnect('zzz', {}, deps)).rejects.toThrow('No instances found in ap-northeast-2 (profile default)');
+    await expect(runConnect(undefined, {}, deps)).rejects.toThrow(
+      'No instances found in ap-northeast-2 (profile default)',
+    );
+    expect(deps.pickInstance).not.toHaveBeenCalled();
   });
 
   test('warns when SSM information is unavailable', async () => {
@@ -181,5 +223,31 @@ describe('runConnect', () => {
     await expect(runConnect('i-1', {}, deps)).rejects.toThrow(
       'Profile "default" is not allowed to perform ssm:StartSession',
     );
+  });
+});
+
+describe('runConnect as the default command', () => {
+  test('a target that matches no instance but looks like a mistyped command names the command', async () => {
+    const deps = makeDeps();
+    const err = await runConnect('conect', { defaultCommand: true }, deps).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(CliError);
+    expect((err as CliError).message).toBe('Unknown command "conect"');
+    expect((err as CliError).hint).toContain('ssm-commander connect');
+    expect(deps.pickInstance).not.toHaveBeenCalled();
+    expect(deps.runSession).not.toHaveBeenCalled();
+  });
+
+  test('an instance that happens to be named like a command is still connected to', async () => {
+    const deps = makeDeps({
+      listInstances: vi.fn(async () => ({ rows: [row({ instanceId: 'i-7', name: 'exec' })], ssmUnavailable: false })),
+    });
+    await runConnect('exec', { defaultCommand: true }, deps);
+    expect(deps.runSession).toHaveBeenCalledWith(ctx, { Target: 'i-7' });
+  });
+
+  test('with "connect" written out, a missing instance is a missing instance, not a typo', async () => {
+    const deps = makeDeps();
+    await runConnect('conect', { defaultCommand: false }, deps);
+    expect(deps.pickInstance).toHaveBeenCalled();
   });
 });

@@ -40,6 +40,6 @@ export async function runProxy(opts: ProxyOptions, deps: ProxyDeps = defaultProx
       Parameters: { portNumber: [String(opts.port ?? 22)] },
     });
   } catch (err) {
-    throw describeAwsError(err, { profile: ctx.profile, action: IAM_ACTIONS.ssmStart });
+    throw describeAwsError(err, { profile: ctx.profile, region: ctx.region, action: IAM_ACTIONS.ssmStart });
   }
 }

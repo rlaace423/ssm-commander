@@ -60,6 +60,32 @@ describe('describeAwsError', () => {
     expect(describeAwsError(coded(code), ctx).message).toBe(`Could not reach AWS (${code})`);
   });
 
+  test('ENOTFOUND names the host that did not resolve and points at the region name', () => {
+    const dns = Object.assign(new Error('getaddrinfo ENOTFOUND ec2.nowhere-1.amazonaws.com'), {
+      code: 'ENOTFOUND',
+      hostname: 'ec2.nowhere-1.amazonaws.com',
+    });
+    const e = describeAwsError(dns, { profile: 'work', region: 'nowhere-1' });
+    expect(e.message).toBe('Could not reach AWS (ENOTFOUND)');
+    expect(e.hint).toBe(
+      'ec2.nowhere-1.amazonaws.com did not resolve; check the network connection and the region name "nowhere-1"',
+    );
+    expect(describeAwsError(coded('ENOTFOUND'), ctx).hint).toBe('Check the network connection and the region name');
+    expect(describeAwsError(coded('ECONNREFUSED'), ctx).hint).toBeUndefined();
+  });
+
+  test('ClusterNotFoundException names the cluster, the region and the profile when they are known', () => {
+    const scoped = describeAwsError(named('ClusterNotFoundException'), {
+      profile: 'work',
+      region: 'ap-northeast-2',
+      cluster: 'nothing',
+    });
+    expect(scoped.message).toBe('Cluster "nothing" was not found in ap-northeast-2 (profile "work")');
+    expect(describeAwsError(named('ClusterNotFoundException'), ctx).message).toBe(
+      'The ECS cluster was not found (profile "work")',
+    );
+  });
+
   test('TimeoutError name → network', () => {
     expect(describeAwsError(named('TimeoutError'), ctx).message).toBe('Could not reach AWS (TimeoutError)');
   });

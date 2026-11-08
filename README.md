@@ -64,6 +64,12 @@ connected to before come first and are marked with `*` (the history is written b
 `ssh` and `scp` show the marks but do not add to it). Instances that cannot be connected (stopped, no SSM agent, agent
 connection lost) are dimmed with the reason and cannot be selected; naming one explicitly fails with that reason.
 
+A target on the command line is an instance id or a Name tag. The name is matched ignoring case, and when several
+instances share it the list opens with just those. An id that is not in the region fails at once, naming the region
+and the profile. In a narrow terminal the table drops the Public IP, Type and Private IP columns (in that order) and
+shortens long names; typing still searches the hidden fields. A first word that matches no instance but looks like
+a mistyped command (`ssm-commander conect`) is reported as an unknown command.
+
 ### exec (ECS containers)
 
 ```bash
@@ -104,7 +110,9 @@ ssm-commander forward --ecs                # pick cluster, service and task from
 
 ![Demo: save a port-forwarding preset, then reuse it by name](demo/forward.gif)
 
-`--remote-host localhost` forwards a port of the instance itself. Values you do not pass are prompted for.
+`--remote-host localhost` forwards a port of the instance itself. Values you do not pass are prompted for. With
+a preset name, options given alongside override the saved values for that run. `--list` and `--delete` cannot be
+combined, nor can `--ecs` and `--target` (write the task as `--target ecs:...` instead).
 Press Ctrl+C to stop forwarding. If the local port is already taken (an earlier forward still running in another
 terminal, for example), the command stops with `Local port <n> is already in use` before opening a session.
 
@@ -118,7 +126,7 @@ remembers the cluster and service and goes through the newest reachable task eac
 
 ```bash
 ssm-commander ssh --profile prod --user ubuntu web-1 -o StrictHostKeyChecking=accept-new hostname
-ssm-commander ssh --profile prod web-1                  # interactive shell as ec2-user
+ssm-commander ssh --profile prod web-1                  # interactive shell; the login name follows the platform
 ssm-commander scp --profile prod ./dump.sql ubuntu@web-1:/tmp/
 ssm-commander scp --profile prod -r ubuntu@web-1:/var/log/app ./logs
 ```
@@ -128,10 +136,14 @@ ssm-commander scp --profile prod -r ubuntu@web-1:/var/log/app ./logs
 Argument order for `ssh`: ssm-commander's own options (`--profile`, `--region`, `--user`, `--identity`,
 `--port`, `--connectable`) first, then the target, then ssh's own options and the remote command, exactly as you
 would write them for `ssh` itself. Everything after the target is passed through unchanged, so `-o ...`, port
-forwards and remote commands with their own flags all work. The target may be written as `user@name`; the default
-user is `ec2-user`, `--user` overrides it, and `user@` overrides both. For `scp`, exactly one side of the transfer
-is `[user@]instance:path`, where `instance` is a Name tag or instance id. Put scp's own flags (`-r`, `-o ...`)
-before the two paths, as `scp` itself requires; after the paths scp would read them as file names.
+forwards and remote commands with their own flags all work. The target may be written as `user@name`. The default
+login name follows the platform that Systems Manager reports for the instance: `ubuntu` on Ubuntu, `admin` on Debian
+and `ec2-user` otherwise (also when the platform is unknown); `--user` overrides it, and `user@` overrides both.
+When ssh fails with its own exit code 255 and the name was a default, a hint says which name was tried. For `scp`,
+exactly one side of the transfer is `[user@]instance:path`, where `instance` is a Name tag or instance id. Put
+scp's own flags (`-r`, `-o ...`) before the two paths, as `scp` itself requires; after the paths scp would read them
+as file names. Both commands take `--profile` and `--region` written in full: `-p` and `-r` belong to ssh and scp
+themselves, and a `-p <profile>` is caught with a hint wherever it lands.
 
 Under the hood both commands run the system `ssh`/`scp` with a `ProxyCommand` that calls a hidden
 `ssm-commander proxy` subcommand, which opens an `AWS-StartSSHSession` through Session Manager. Host keys are
@@ -157,7 +169,8 @@ actions (`iam:SimulatePrincipalPolicy`; shown as `!` when that call is not allow
 
 MFA-protected `assume-role` profiles prompt for the code in `connect`, `exec`, `forward` and `doctor`; `ssh` and `scp`
 cannot prompt (the SSH data channel occupies stdin), so use them with profiles that need no MFA code. SSO profiles
-work while their token is valid; this tool does not run the SSO login itself.
+work while their token is valid; this tool does not run the SSO login itself. Without a terminal (a pipe, a script),
+anything that would prompt fails with a message naming what was needed and the option that avoids it.
 
 ### Working with narrow permissions
 
@@ -186,9 +199,10 @@ forwarded with `AWS-StartPortForwardingSession`; any other host with `AWS-StartP
 - `~/.ssm-commander/presets.json`: saved port-forwarding presets.
 - Both are created with mode 0600 and never contain credentials or tokens.
 - `SSM_COMMANDER_HOME`: use another directory for the files above.
-- `SSM_COMMANDER_PLUGIN_PATH`: explicit path to session-manager-plugin.
-- `SSM_COMMANDER_DEBUG=1`: print stack traces for unexpected errors. The equivalent `--debug` flag goes before the
-  command, as in `ssm-commander --debug connect web-1`.
+- `SSM_COMMANDER_PLUGIN_PATH`: explicit path to session-manager-plugin. When the file is not there the command fails
+  instead of silently using the plugin on `PATH`, and `doctor` reports it.
+- `SSM_COMMANDER_DEBUG=1`: print stack traces for unexpected errors. The equivalent `--debug` flag goes anywhere among
+  the options, before or after the command name (for `ssh` and `scp`, before the target).
 - Upgrading from 0.1: the old saved-command file `~/.ssm-commander/config.json` is no longer read. It is left
   untouched and can be deleted.
 

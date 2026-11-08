@@ -331,3 +331,27 @@ describe('runExec with explicit targets', () => {
     expect((err as CliError).hint).toContain('--cluster');
   });
 });
+
+describe('messages name the region and profile', () => {
+  test('a region without clusters', async () => {
+    const { deps } = makeDeps({ clusters: [], services: {}, tasks: {} });
+    await expect(runExec(undefined, {}, deps)).rejects.toThrow('No ECS clusters found in ap-northeast-2 (profile prod)');
+  });
+
+  test('a cluster ECS does not know (ClusterNotFoundException) is named together with its region', async () => {
+    const { deps } = makeDeps(twoOfEverything, {
+      fetchTasks: vi.fn(async () => {
+        throw Object.assign(new Error('Cluster not found.'), { name: 'ClusterNotFoundException' });
+      }),
+    });
+    await expect(runExec('nothing/nothing', {}, deps)).rejects.toThrow(
+      'Cluster "nothing" was not found in ap-northeast-2 (profile "prod")',
+    );
+  });
+
+  test('the terminal check explains that the session itself is interactive', async () => {
+    const { deps } = makeDeps(twoOfEverything);
+    await runExec(undefined, {}, deps);
+    expect(deps.requireTty).toHaveBeenCalledWith(expect.objectContaining({ what: expect.stringContaining('exec') }));
+  });
+});

@@ -121,7 +121,7 @@ describe('runSsh', () => {
   test('rejects ssh options placed before the target with a clear message', async () => {
     const deps = makeDeps();
     await expect(runSsh(['-i', 'key.pem', 'web', 'hostname'], {}, deps)).rejects.toThrow(
-      'The target must come first: ssm-commander ssh [options] <target> [ssh options] [command]',
+      'The target must come first: ssm-commander ssh [--profile <profile>] [--region <region>] [--user <user>] <target> [ssh options] [command]',
     );
     expect(deps.resolveContext).not.toHaveBeenCalled();
     expect(deps.spawn).not.toHaveBeenCalled();
@@ -184,5 +184,74 @@ describe('runProxy', () => {
     await expect(
       runProxy({ region: 'ap-northeast-2', target: 'i-1', port: 22 }, { resolveContext: vi.fn(), runSession: vi.fn() }),
     ).rejects.toThrow(CliError);
+  });
+});
+
+describe('login name by platform', () => {
+  const ubuntu = row({ instanceId: 'i-5', name: 'ubu', platform: 'Ubuntu' });
+  const ubuntuProxy = proxy.replace("--target 'i-1'", "--target 'i-5'");
+  const platformDeps = (over: Partial<SshDeps> = {}) =>
+    makeDeps({ listInstances: vi.fn(async () => ({ rows: [web, ubuntu], ssmUnavailable: false })), ...over });
+
+  test('ssh logs in as ubuntu on an Ubuntu instance unless --user or user@ says otherwise', async () => {
+    const deps = platformDeps();
+    await runSsh(['ubu', 'hostname'], {}, deps);
+    expect(deps.spawn).toHaveBeenCalledWith(
+      'ssh',
+      ['-o', `ProxyCommand=${ubuntuProxy}`, '-l', 'ubuntu', 'i-5', 'hostname'],
+      expect.anything(),
+    );
+    const explicit = platformDeps();
+    await runSsh(['ubu'], { user: 'admin' }, explicit);
+    expect((explicit.spawn as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[1]).toContain('admin');
+  });
+
+  test('an instance of unknown platform keeps ec2-user', async () => {
+    const deps = platformDeps();
+    await runSsh(['web'], {}, deps);
+    expect((deps.spawn as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[1]).toContain('ec2-user');
+  });
+
+  test('scp uses the same default login name', async () => {
+    const deps = platformDeps();
+    await runScp(['./a', 'ubu:/tmp/a'], {}, deps);
+    expect((deps.spawn as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[1]).toContain('User=ubuntu');
+  });
+
+  test('when ssh fails with 255 and the login name was a default, a hint names --user', async () => {
+    const deps = platformDeps({ spawn: fakeSpawn({ code: 255 }) as unknown as SshDeps['spawn'] });
+    expect(await runSsh(['ubu'], {}, deps)).toBe(255);
+    const messages = (deps.info as ReturnType<typeof vi.fn>).mock.calls.map(([m]) => String(m));
+    expect(messages.some((m) => m.includes('"ubuntu"') && m.includes('--user'))).toBe(true);
+
+    const explicit = platformDeps({ spawn: fakeSpawn({ code: 255 }) as unknown as SshDeps['spawn'] });
+    await runSsh(['ubu'], { user: 'admin' }, explicit);
+    const quiet = (explicit.info as ReturnType<typeof vi.fn>).mock.calls.map(([m]) => String(m));
+    expect(quiet.some((m) => m.includes('--user'))).toBe(false);
+
+    const ok = platformDeps();
+    await runSsh(['ubu'], {}, ok);
+    expect((ok.info as ReturnType<typeof vi.fn>).mock.calls.map(([m]) => String(m)).some((m) => m.includes('--user'))).toBe(false);
+  });
+});
+
+describe('ssh short flags that belong to ssh', () => {
+  test('-p or -r before the target explains that ssm-commander wants --profile/--region there', async () => {
+    const deps = makeDeps();
+    const err = await runSsh(['-p', 'default', 'web', 'hostname'], {}, deps).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(CliError);
+    expect((err as CliError).message).toContain('--profile');
+    expect((err as CliError).hint).toContain('ssm-commander ssh');
+    const region = await runSsh(['-r', 'us-east-1', 'web'], {}, deps).catch((e: unknown) => e);
+    expect((region as CliError).message).toContain('--region');
+    expect(deps.resolveContext).not.toHaveBeenCalled();
+  });
+
+  test('-p with a profile name after the target is caught before ssh complains about the port', async () => {
+    const deps = makeDeps();
+    await expect(runSsh(['web', '-p', 'default', 'hostname'], {}, deps)).rejects.toThrow('--profile default');
+    expect(deps.resolveContext).not.toHaveBeenCalled();
+    await runSsh(['web', '-p', '2222', 'hostname'], {}, deps); // a real port is passed through
+    expect((deps.spawn as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[1]).toContain('2222');
   });
 });

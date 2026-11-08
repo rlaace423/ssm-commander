@@ -94,7 +94,12 @@ function checkNode(version: string): DoctorCheck {
 
 async function checkPlugin(deps: DoctorDeps): Promise<DoctorCheck> {
   const name = 'session-manager-plugin';
-  const pluginPath = deps.findPluginPath();
+  let pluginPath: string | null;
+  try {
+    pluginPath = deps.findPluginPath();
+  } catch (err) {
+    return { name, ok: false, detail: err instanceof Error ? err.message : String(err) };
+  }
   if (pluginPath === null) return { name, ok: false, detail: `not found on PATH (install: ${PLUGIN_INSTALL_URL})` };
   const version = await deps.getPluginVersion(pluginPath);
   if (version === null) return { name, ok: true, detail: `${pluginPath} (version unknown)` };
@@ -196,7 +201,7 @@ async function checkTaskRole(ctx: AwsContext, ecs: Sender, task: TaskRow, deps: 
       ? { name, ok: true, detail: `${roleName} allows the ssmmessages channel actions` }
       : { name, ok: false, detail: `${roleName} lacks ${denied.join(', ')}` };
   } catch (err) {
-    const why = describeAwsError(err, { profile: ctx.profile }).message;
+    const why = describeAwsError(err, { profile: ctx.profile, region: ctx.region }).message;
     return { name, ok: true, warning: true, detail: `${roleName} is attached; could not verify its policies (${why})` };
   }
 }
@@ -244,7 +249,7 @@ async function ecsExecChecks(ctx: AwsContext, target: ExecTarget, deps: DoctorDe
     checks.push({
       name: checks.length === 0 ? serviceName : 'ECS Exec',
       ok: false,
-      detail: describeAwsError(err, { profile: ctx.profile }).message,
+      detail: describeAwsError(err, { profile: ctx.profile, region: ctx.region, cluster }).message,
     });
   }
   return checks;

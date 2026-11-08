@@ -191,3 +191,18 @@ describe('matching', () => {
     expect(matchesTask(t, 'nope')).toBe(false);
   });
 });
+
+describe('ECS tables in a narrow terminal', () => {
+  test('clusters lose Running tasks and Services, services lose Task definition and Launch type, tasks lose Started, Health and Containers', () => {
+    expect(buildClusterChoices([cluster()], [], 30).header).not.toContain('Running tasks');
+    expect(buildClusterChoices([cluster()], [], 30).header).toContain('Cluster');
+    const services = buildServiceChoices([service()], [], 30).header;
+    expect(services).not.toContain('Task definition');
+    expect(services).not.toContain('Launch type');
+    expect(services).toContain('Exec');
+    const tasks = buildTaskChoices([task()], new Date('2026-11-08T01:00:00Z'), 50).header;
+    for (const gone of ['Started', 'Health', 'Containers']) expect(tasks).not.toContain(gone);
+    expect(tasks).toContain('Task Id');
+    expect(tasks).toContain('Exec agent');
+  });
+});

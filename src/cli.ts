@@ -1,8 +1,8 @@
 import { realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { Command, CommanderError, InvalidArgumentError } from 'commander';
+import { Command, CommanderError, InvalidArgumentError, Option } from 'commander';
 import pkg from '../package.json' with { type: 'json' };
-import { type ConnectDeps, runConnect } from './commands/connect.js';
+import { type ConnectDeps, type ConnectOptions, runConnect } from './commands/connect.js';
 import { runDoctor } from './commands/doctor.js';
 import { type ExecDeps, type ExecOptions, runExec } from './commands/exec.js';
 import { type ForwardDeps, type ForwardOptions, runForward, validatePort } from './commands/forward.js';
@@ -31,19 +31,22 @@ export function createProgram(deps: ProgramDeps = {}): Command {
     .option('--debug', 'print stack traces for unexpected errors')
     .exitOverride();
 
-  program
-    .command('connect', { isDefault: true })
+  /** `--debug` is read from argv by main(); each command accepts it too so it may follow the command name. */
+  const command = (name: string, opts?: { isDefault?: boolean; hidden?: boolean }) =>
+    program.command(name, opts).addOption(new Option('--debug').hideHelp());
+
+  command('connect', { isDefault: true })
     .description('Open an interactive shell on an EC2 instance through Session Manager')
     .argument('[target]', 'instance id or Name tag; omit to pick from a list')
     .option('-p, --profile <profile>', 'AWS profile (defaults to AWS_PROFILE, then a prompt)')
     .option('-r, --region <region>', 'AWS region (defaults to the profile region, then a prompt)')
     .option('--connectable', 'list only instances that can be connected right now')
-    .action(async (target: string | undefined, opts: { profile?: string; region?: string; connectable?: boolean }) => {
-      lastExitCode = await runConnect(target, opts, deps.connect);
+    .action(async (target: string | undefined, opts: ConnectOptions) => {
+      // program.args[0] is the first operand of the whole command line: "connect" when it was written out.
+      lastExitCode = await runConnect(target, { ...opts, defaultCommand: program.args[0] !== 'connect' }, deps.connect);
     });
 
-  program
-    .command('exec')
+  command('exec')
     .description('Open an interactive shell in an ECS container through ECS Exec')
     .argument('[target]', 'service, cluster/service or cluster/service/task-id; omit to pick from lists')
     .option('-p, --profile <profile>', 'AWS profile (defaults to AWS_PROFILE, then a prompt)')
@@ -58,8 +61,7 @@ export function createProgram(deps: ProgramDeps = {}): Command {
       lastExitCode = await runExec(target, opts, deps.exec);
     });
 
-  program
-    .command('forward')
+  command('forward')
     .description('Forward a local port to a service reachable from an EC2 instance or an ECS task')
     .argument('[preset]', 'name of a saved preset to run')
     .option('-p, --profile <profile>', 'AWS profile (defaults to AWS_PROFILE, then a prompt)')
@@ -99,14 +101,13 @@ export function createProgram(deps: ProgramDeps = {}): Command {
       .allowUnknownOption()
       .option('--profile <profile>', 'AWS profile (defaults to AWS_PROFILE, then a prompt)')
       .option('--region <region>', 'AWS region (defaults to the profile region, then a prompt)')
-      .option('--user <user>', 'SSH user name (default: ec2-user)')
+      .option('--user <user>', 'SSH login name (default: ubuntu on Ubuntu, admin on Debian, ec2-user otherwise)')
       .option('--identity <file>', 'private key file, passed to ssh/scp as -i')
       .option('--port <port>', 'SSH port on the instance (default: 22)', portOption)
       .option('--connectable', 'list only instances that can be connected right now');
 
   addSshOptions(
-    program
-      .command('ssh')
+    command('ssh')
       .description(`Open ssh to an EC2 instance through Session Manager. ${sshNote}`)
       .argument('[args...]', 'target (instance id or Name tag) followed by ssh options and a remote command'),
   ).action(async (args: string[], opts: SshOptions) => {
@@ -114,16 +115,14 @@ export function createProgram(deps: ProgramDeps = {}): Command {
   });
 
   addSshOptions(
-    program
-      .command('scp')
+    command('scp')
       .description(`Copy files to or from an EC2 instance through Session Manager. ${scpNote}`)
       .argument('[args...]', 'scp arguments; exactly one side is [user@]instance:path'),
   ).action(async (args: string[], opts: SshOptions) => {
     lastExitCode = await runScp(args, opts, deps.scp);
   });
 
-  program
-    .command('doctor')
+  command('doctor')
     .description(
       'Check Node.js, session-manager-plugin, AWS config files, (with --profile) the credentials and (with --ecs) ECS Exec',
     )
@@ -134,8 +133,7 @@ export function createProgram(deps: ProgramDeps = {}): Command {
       lastExitCode = await runDoctor(opts);
     });
 
-  program
-    .command('proxy', { hidden: true })
+  command('proxy', { hidden: true })
     .description('ProxyCommand helper used by the ssh and scp commands')
     .requiredOption('--profile <profile>', 'AWS profile')
     .requiredOption('--region <region>', 'AWS region')

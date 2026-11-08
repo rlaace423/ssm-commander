@@ -121,6 +121,19 @@ describe('runDoctorChecks', () => {
     expect(plugin?.detail).toContain('not found on PATH');
   });
 
+  test('a plugin path variable that points nowhere is reported as a failure with the path', async () => {
+    const [, plugin] = await runDoctorChecks(
+      {},
+      makeDeps({
+        findPluginPath: () => {
+          throw new CliError('SSM_COMMANDER_PLUGIN_PATH points to "/nope", which does not exist');
+        },
+      }),
+    );
+    expect(plugin).toMatchObject({ ok: false });
+    expect(plugin?.detail).toContain('/nope');
+  });
+
   test('old plugin passes with a warning detail', async () => {
     const [, plugin] = await runDoctorChecks({}, makeDeps({ getPluginVersion: async () => '1.2.500.0' }));
     expect(plugin?.ok).toBe(true);

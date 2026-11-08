@@ -1,23 +1,24 @@
 import { select } from '@inquirer/prompts';
 import type { ClusterRow, ContainerInfo, ServiceRow, TaskRow } from '../aws/ecs.js';
 import { CliError } from '../errors.js';
-import { promptIo, requireTty } from './prompts.js';
+import { promptIo, promptTableWidth, requireTty } from './prompts.js';
 import { createTable, markRecent, type TableColumn } from './table.js';
 import { type TableChoice, tableSearch } from './table-search.js';
 
+/** dropOrder: what a narrow terminal loses first; the name, the status and the Note (the reason) always stay. */
 export const CLUSTER_COLUMNS: TableColumn[] = [
-  { key: 'name', header: 'Cluster' },
+  { key: 'name', header: 'Cluster', shrink: true },
   { key: 'status', header: 'Status' },
-  { key: 'services', header: 'Services' },
-  { key: 'runningTasks', header: 'Running tasks' },
+  { key: 'services', header: 'Services', dropOrder: 2 },
+  { key: 'runningTasks', header: 'Running tasks', dropOrder: 1 },
   { key: 'reason', header: 'Note' },
 ];
 
 export const SERVICE_COLUMNS: TableColumn[] = [
-  { key: 'name', header: 'Service' },
+  { key: 'name', header: 'Service', shrink: true },
   { key: 'tasks', header: 'Running/Desired' },
-  { key: 'launchType', header: 'Launch type' },
-  { key: 'taskDefinition', header: 'Task definition' },
+  { key: 'launchType', header: 'Launch type', dropOrder: 2 },
+  { key: 'taskDefinition', header: 'Task definition', dropOrder: 1 },
   { key: 'execEnabled', header: 'Exec' },
   { key: 'reason', header: 'Note' },
 ];
@@ -25,10 +26,10 @@ export const SERVICE_COLUMNS: TableColumn[] = [
 export const TASK_COLUMNS: TableColumn[] = [
   { key: 'taskId', header: 'Task Id' },
   { key: 'lastStatus', header: 'Status' },
-  { key: 'health', header: 'Health' },
-  { key: 'containers', header: 'Containers' },
+  { key: 'health', header: 'Health', dropOrder: 2 },
+  { key: 'containers', header: 'Containers', dropOrder: 3 },
   { key: 'agentStatus', header: 'Exec agent' },
-  { key: 'startedAt', header: 'Started' },
+  { key: 'startedAt', header: 'Started', dropOrder: 1 },
   { key: 'reason', header: 'Note' },
 ];
 
@@ -46,8 +47,9 @@ function toChoices<T extends { connectable: boolean }>(
   columns: TableColumn[],
   rows: T[],
   cell: (row: T, key: string) => string,
+  maxWidth?: number,
 ): Choices<T> {
-  const table = createTable(columns, rows, cell);
+  const table = createTable(columns, rows, cell, { maxWidth });
   return {
     header: table.header,
     footer: table.footer,
@@ -84,42 +86,55 @@ export interface PickOptions {
   recent: string[];
 }
 
-export function buildClusterChoices(rows: ClusterRow[], recent: string[] = []): Choices<ClusterRow> {
+export function buildClusterChoices(rows: ClusterRow[], recent: string[] = [], maxWidth?: number): Choices<ClusterRow> {
   const marked = new Set(recent);
-  return toChoices(CLUSTER_COLUMNS, rows, (row, key) =>
-    key === 'name' ? markRecent(row.name, marked.has(row.name)) : text(row[key as keyof ClusterRow]),
+  return toChoices(
+    CLUSTER_COLUMNS,
+    rows,
+    (row, key) => (key === 'name' ? markRecent(row.name, marked.has(row.name)) : text(row[key as keyof ClusterRow])),
+    maxWidth,
   );
 }
 
-export function buildServiceChoices(rows: ServiceRow[], recent: string[] = []): Choices<ServiceRow> {
+export function buildServiceChoices(rows: ServiceRow[], recent: string[] = [], maxWidth?: number): Choices<ServiceRow> {
   const marked = new Set(recent);
-  return toChoices(SERVICE_COLUMNS, rows, (row, key) => {
-    switch (key) {
-      case 'name':
-        return markRecent(row.name, marked.has(row.name));
-      case 'tasks':
-        return `${row.running}/${row.desired ?? '-'}`;
-      case 'execEnabled':
-        return row.execEnabled === null ? '' : row.execEnabled ? 'on' : 'off';
-      default:
-        return text(row[key as keyof ServiceRow]);
-    }
-  });
+  return toChoices(
+    SERVICE_COLUMNS,
+    rows,
+    (row, key) => {
+      switch (key) {
+        case 'name':
+          return markRecent(row.name, marked.has(row.name));
+        case 'tasks':
+          return `${row.running}/${row.desired ?? '-'}`;
+        case 'execEnabled':
+          return row.execEnabled === null ? '' : row.execEnabled ? 'on' : 'off';
+        default:
+          return text(row[key as keyof ServiceRow]);
+      }
+    },
+    maxWidth,
+  );
 }
 
-export function buildTaskChoices(rows: TaskRow[], now: Date): Choices<TaskRow> {
-  return toChoices(TASK_COLUMNS, rows, (row, key) => {
-    switch (key) {
-      case 'containers': {
-        const names = row.containers.map((c) => c.name).join(', ');
-        return names.length > CONTAINERS_WIDTH ? `${names.slice(0, CONTAINERS_WIDTH - 1)}…` : names;
+export function buildTaskChoices(rows: TaskRow[], now: Date, maxWidth?: number): Choices<TaskRow> {
+  return toChoices(
+    TASK_COLUMNS,
+    rows,
+    (row, key) => {
+      switch (key) {
+        case 'containers': {
+          const names = row.containers.map((c) => c.name).join(', ');
+          return names.length > CONTAINERS_WIDTH ? `${names.slice(0, CONTAINERS_WIDTH - 1)}…` : names;
+        }
+        case 'startedAt':
+          return row.startedAt ? formatAge(row.startedAt, now) : '';
+        default:
+          return text(row[key as keyof TaskRow]);
       }
-      case 'startedAt':
-        return row.startedAt ? formatAge(row.startedAt, now) : '';
-      default:
-        return text(row[key as keyof TaskRow]);
-    }
-  });
+    },
+    maxWidth,
+  );
 }
 
 export function matchesName(name: string, term: string): boolean {
@@ -136,8 +151,8 @@ export function matchesTask(row: TaskRow, term: string): boolean {
 
 export async function pickCluster(rows: ClusterRow[], opts: PickOptions = { recent: [] }): Promise<ClusterRow> {
   if (rows.length === 0) throw new CliError('No ECS clusters found');
-  requireTty();
-  const { header, footer, choices } = buildClusterChoices(rows, opts.recent);
+  requireTty({ what: 'Picking a cluster', hint: 'Pass --cluster' });
+  const { header, footer, choices } = buildClusterChoices(rows, opts.recent, promptTableWidth());
   return tableSearch<ClusterRow>(
     {
       message: 'Select a cluster',
@@ -155,8 +170,8 @@ export async function pickService(
   opts: PickOptions = { recent: [] },
 ): Promise<ServiceRow> {
   if (rows.length === 0) throw new CliError(`No services or running tasks in cluster "${cluster}"`);
-  requireTty();
-  const { header, footer, choices } = buildServiceChoices(rows, opts.recent);
+  requireTty({ what: 'Picking a service', hint: 'Pass cluster/service as the target, or --service' });
+  const { header, footer, choices } = buildServiceChoices(rows, opts.recent, promptTableWidth());
   return tableSearch<ServiceRow>(
     {
       message: `Select a service in ${cluster}`,
@@ -170,8 +185,8 @@ export async function pickService(
 
 export async function pickTask(rows: TaskRow[], service: string, now: Date = new Date()): Promise<TaskRow> {
   if (rows.length === 0) throw new CliError(`No running tasks in ${service}`);
-  requireTty();
-  const { header, footer, choices } = buildTaskChoices(rows, now);
+  requireTty({ what: 'Picking a task', hint: 'Pass --task' });
+  const { header, footer, choices } = buildTaskChoices(rows, now, promptTableWidth());
   return tableSearch<TaskRow>(
     {
       message: `Select a task of ${service}`,
@@ -185,7 +200,7 @@ export async function pickTask(rows: TaskRow[], service: string, now: Date = new
 
 /** Only asked when a task has several containers; containers without a running exec agent cannot be chosen. */
 export async function pickContainer(task: TaskRow): Promise<ContainerInfo> {
-  requireTty();
+  requireTty({ what: 'Picking a container', hint: 'Pass --container' });
   return select<ContainerInfo>(
     {
       message: `Select a container of task ${task.taskId}`,

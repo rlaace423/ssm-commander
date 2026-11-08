@@ -59,10 +59,24 @@ const EXPIRED_CREDENTIALS = ['ExpiredToken', 'ExpiredTokenException'];
 const ACCESS_DENIED = ['AccessDeniedException', 'UnauthorizedOperation', 'AccessDenied'];
 const NETWORK_CODES = ['ENOTFOUND', 'ECONNREFUSED', 'ETIMEDOUT', 'ECONNRESET'];
 
+export interface AwsErrorContext {
+  profile: string;
+  /** The IAM action the call needed, for the access-denied hint. */
+  action?: string;
+  /** Known when the call was scoped: the messages then say where the lookup happened. */
+  region?: string;
+  cluster?: string;
+}
+
 /** Turns an SDK/provider error into a CliError with a one-line cause and a one-line hint. */
-export function describeAwsError(err: unknown, ctx: { profile: string; action?: string }): CliError {
+export function describeAwsError(err: unknown, ctx: AwsErrorContext): CliError {
   if (err instanceof CliError) return err;
-  const e = (typeof err === 'object' && err !== null ? err : {}) as { name?: string; code?: string; message?: string };
+  const e = (typeof err === 'object' && err !== null ? err : {}) as {
+    name?: string;
+    code?: string;
+    message?: string;
+    hostname?: string;
+  };
   const name = e.name ?? '';
   const code = e.code ?? '';
   const profile = `profile "${ctx.profile}"`;
@@ -101,8 +115,20 @@ export function describeAwsError(err: unknown, ctx: { profile: string; action?: 
       'Start the service or task with enableExecuteCommand (for a service: aws ecs update-service --enable-execute-command --force-new-deployment) and wait for the agent to come up',
     );
   }
+  if (name === 'ClusterNotFoundException') {
+    const what = ctx.cluster !== undefined ? `Cluster "${ctx.cluster}"` : 'The ECS cluster';
+    const where = ctx.region !== undefined ? ` in ${ctx.region}` : '';
+    return new CliError(`${what} was not found${where} (${profile})`);
+  }
   if (NETWORK_CODES.includes(code) || name === 'TimeoutError') {
-    return new CliError(`Could not reach AWS (${NETWORK_CODES.includes(code) ? code : name})`);
+    const message = `Could not reach AWS (${NETWORK_CODES.includes(code) ? code : name})`;
+    if (code !== 'ENOTFOUND') return new CliError(message);
+    // A mistyped region makes an endpoint name that does not exist; it looks like a network failure otherwise.
+    const regionName = ctx.region !== undefined ? ` "${ctx.region}"` : '';
+    const hint = e.hostname
+      ? `${e.hostname} did not resolve; check the network connection and the region name${regionName}`
+      : `Check the network connection and the region name${regionName}`;
+    return new CliError(message, hint);
   }
   return new CliError(String(e.message ?? err));
 }

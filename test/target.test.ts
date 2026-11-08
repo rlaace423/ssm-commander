@@ -54,8 +54,16 @@ describe('resolveTarget', () => {
     expect(resolveTarget('i-3', rows)).toEqual({ kind: 'not-connectable', row: db });
   });
 
-  test('name match is exact and case-sensitive (web ≠ Web, web ≠ web-1)', () => {
-    expect(resolveTarget('Web', rows)).toEqual({ kind: 'not-found' });
+  test('a name matches ignoring case when nothing matches exactly; prefixes never match', () => {
+    expect(resolveTarget('WEB-1', rows)).toEqual({ kind: 'resolved', row: dash });
+    expect(resolveTarget('Web', rows)).toEqual({ kind: 'ambiguous', rows: [web1, web2] });
     expect(resolveTarget('we', rows)).toEqual({ kind: 'not-found' });
+  });
+
+  test('an exact match wins over names that differ only in case', () => {
+    const upper = row({ instanceId: 'i-5', name: 'Web' });
+    expect(resolveTarget('Web', [web1, upper])).toEqual({ kind: 'resolved', row: upper });
+    expect(resolveTarget('web', [web1, upper])).toEqual({ kind: 'resolved', row: web1 });
+    expect(resolveTarget('WEB', [web1, upper])).toEqual({ kind: 'ambiguous', rows: [web1, upper] });
   });
 });

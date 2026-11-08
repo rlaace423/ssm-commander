@@ -38,11 +38,28 @@ linked role", ECS was still creating its service-linked role; run `up` again.
 - [ ] `ssm-commander connect <stopped-instance-name> -p <profile>` fails with `cannot be connected: stopped` (the
   test-infra stack creates running instances only: stop one first with `aws ec2 stop-instances`).
 - [ ] `ssm-commander connect --connectable -p <profile>` hides the non-connectable rows.
+- [ ] `ssm-commander connect <NAME-IN-ANOTHER-CASE> -p <profile>` connects all the same (names match ignoring case).
+- [ ] `ssm-commander connect i-0123456789abcdef0 -p <profile>` fails at once with `was not found in <region>
+  (profile <profile>)` and does not open the list; `ssm-commander connect no-such-name -p <profile> < /dev/null`
+  prints one line naming the region and profile.
+- [ ] `ssm-commander conect -p <profile>` prints `Unknown command "conect"` with the `Did you mean` hint.
+- [ ] In a 70-column terminal, `ssm-commander connect -p <profile>` shows the table without wrapped lines (the Public
+  IP, Type and Private IP columns are gone and long names end in `…`), with `(type to search, ↑↓ to move, Enter to
+  select)` under it.
+- [ ] `ssm-commander connect --debug -p <profile> -r nowhere-1` fails with `Could not reach AWS (ENOTFOUND)`, a hint
+  naming the region, and a stack trace (`--debug` after the command name works).
+- [ ] `SSM_COMMANDER_PLUGIN_PATH=/nope ssm-commander doctor` prints ✘ for the plugin with that path, and `connect`
+  with the same variable fails before any session is opened.
+- [ ] `ssm-commander forward --list --delete x` and `ssm-commander forward --ecs --target <name> --remote-host localhost --remote-port 22 --local-port 2222`
+  fail with `cannot be combined`; `--local-port abc` names the option in its error.
 - [ ] `ssm-commander forward -p <profile> --target <name> --remote-host localhost --remote-port 22 --local-port 2222 --save t`
   then, in another terminal, `ssh -p 2222 <user>@localhost hostname` prints the hostname; Ctrl+C stops the
   forward; `ssm-commander forward t` starts again without prompts; `ssm-commander forward --list` shows `t`.
-- [ ] `ssm-commander ssh --profile <profile> --user ubuntu <ubuntu-name> hostname` prints the hostname, and
-  `ssm-commander ssh --profile <profile> <amazon-linux-name> whoami` prints `ec2-user`.
+- [ ] `ssm-commander ssh --profile <profile> <ubuntu-name> whoami` prints `ubuntu` without `--user` (the login name
+  follows the platform), `ssm-commander ssh --profile <profile> <amazon-linux-name> whoami` prints `ec2-user`, and
+  `--user admin` or `admin@<name>` wins over the default.
+- [ ] `ssm-commander ssh -p <profile> <name>` and `ssm-commander ssh --profile <profile> <name> -p <profile> hostname`
+  both stop with a hint about `--profile` before any AWS call.
 - [ ] `ssm-commander scp --profile <profile> ./file user@<name>:/tmp/file` followed by the download in the other
   direction gives an identical file; `-r` copies a directory.
 - [ ] Inside a session, Ctrl+C interrupts the remote command (try `sleep 30`) and ssm-commander keeps running.

@@ -288,7 +288,7 @@ describe('runForward', () => {
     const deps = makeDeps();
     await expect(
       runForward(undefined, { target: 'web', remoteHost: 'localhost', remotePort: '99999', localPort: '2222' }, deps),
-    ).rejects.toThrow('Enter a port number between 1 and 65535');
+    ).rejects.toThrow('--remote-port must be a port number between 1 and 65535 (got "99999")');
     expect(deps.runSession).not.toHaveBeenCalled();
   });
 
@@ -450,5 +450,47 @@ describe('runForward through an ECS task', () => {
     expect(out).toContain('web (i-1)');
     expect(out).toContain('ecs:prod/api');
     expect(out).toContain('db.internal:5432 -> 15432');
+  });
+});
+
+describe('conflicting or malformed options', () => {
+  const ports = { remoteHost: 'db.internal', remotePort: '5432', localPort: '15432' };
+
+  test('--list with --delete is refused before anything is read or written', async () => {
+    const deps = makeDeps();
+    await expect(runForward(undefined, { list: true, delete: 'x' }, deps)).rejects.toThrow(
+      '--list and --delete cannot be combined',
+    );
+    expect(deps.writeStdout).not.toHaveBeenCalled();
+    expect(deps.savePresets).not.toHaveBeenCalled();
+  });
+
+  test('--ecs with --target is refused and the hint shows the ecs: form of --target', async () => {
+    const deps = makeDeps();
+    const err = await runForward(undefined, { ecs: true, target: 'web', ...ports }, deps).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(CliError);
+    expect((err as CliError).message).toBe('--ecs and --target cannot be combined');
+    expect((err as CliError).hint).toContain('--target ecs:cluster/service');
+    expect(deps.listInstances).not.toHaveBeenCalled();
+    expect(deps.ecs.fetchClusters).not.toHaveBeenCalled();
+  });
+
+  test('a port option that is not a port names the option and the value', async () => {
+    const deps = makeDeps();
+    await expect(runForward(undefined, { target: 'web', ...ports, localPort: 'abc' }, deps)).rejects.toThrow(
+      '--local-port must be a port number between 1 and 65535 (got "abc")',
+    );
+    expect(deps.runSession).not.toHaveBeenCalled();
+  });
+
+  test('the terminal checks say what would be asked and which options avoid it', async () => {
+    const deps = makeDeps();
+    await runForward(undefined, { target: 'web' }, deps);
+    expect(deps.requireTty).toHaveBeenCalledWith(
+      expect.objectContaining({ hint: expect.stringContaining('--remote-host, --remote-port and --local-port') }),
+    );
+    const picker = makeDeps();
+    await runForward(undefined, ports, picker);
+    expect(picker.requireTty).toHaveBeenCalledWith(expect.objectContaining({ hint: expect.stringContaining('--target') }));
   });
 });

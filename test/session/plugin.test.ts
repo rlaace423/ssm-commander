@@ -10,6 +10,7 @@ import {
   pluginFileNames,
   RECOMMENDED_MIN_VERSION,
 } from '../../src/session/plugin.js';
+import { CliError } from '../../src/errors.js';
 import type { SessionStart } from '../../src/types.js';
 
 const session: SessionStart = { SessionId: 's-1', StreamUrl: 'wss://x', TokenValue: 'tok' };
@@ -45,15 +46,16 @@ describe('findPluginPath', () => {
     ).toBe('/opt/custom/plugin');
   });
 
-  test('falls back to PATH when SSM_COMMANDER_PLUGIN_PATH does not exist', () => {
+  test('refuses an SSM_COMMANDER_PLUGIN_PATH that does not exist instead of silently using PATH', () => {
     const exists = (p: string) => p === '/usr/local/bin/session-manager-plugin';
-    expect(
+    const lookup = () =>
       findPluginPath({
         env: { SSM_COMMANDER_PLUGIN_PATH: '/nope', PATH: '/usr/local/bin' },
         platform: 'darwin',
         exists,
-      }),
-    ).toBe('/usr/local/bin/session-manager-plugin');
+      });
+    expect(lookup).toThrow(CliError);
+    expect(lookup).toThrow('SSM_COMMANDER_PLUGIN_PATH points to "/nope", which does not exist');
   });
 
   test('scans PATH directories in order on posix', () => {

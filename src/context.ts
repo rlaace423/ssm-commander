@@ -10,14 +10,14 @@ import {
 import { listRegions } from './aws/regions.js';
 import { CliError } from './errors.js';
 import type { AwsContext } from './types.js';
-import { promptMfaCode, promptProfile, promptRegion, requireTty } from './ui/prompts.js';
+import { promptMfaCode, promptProfile, promptRegion, requireTty, type TtyNeed } from './ui/prompts.js';
 
 export interface ContextDeps {
   loadSharedConfig: () => Promise<SharedConfigFiles>;
   promptProfile: (names: string[]) => Promise<string>;
   promptRegion: (regions: string[]) => Promise<string>;
   listRegions: (credentials: AwsCredentialIdentityProvider) => Promise<string[]>;
-  requireTty: () => void;
+  requireTty: (need?: TtyNeed) => void;
   env: NodeJS.ProcessEnv;
   credentialsFor: (
     profile: string,
@@ -32,7 +32,7 @@ export function defaultContextDeps(): ContextDeps {
     promptProfile,
     promptRegion,
     listRegions: (credentials) => listRegions(credentials),
-    requireTty: () => requireTty(),
+    requireTty: (need) => requireTty(need),
     env: process.env,
     credentialsFor,
     promptMfaCode,
@@ -55,17 +55,24 @@ export async function resolveContext(
   if (decision.kind === 'use') {
     profile = decision.name;
   } else {
-    deps.requireTty();
+    deps.requireTty({ what: 'Choosing a profile', hint: 'Pass --profile or set AWS_PROFILE' });
     profile = await deps.promptProfile(available);
   }
 
   const credentials = deps.credentialsFor(profile, async (serial) => {
-    deps.requireTty(); // an MFA prompt cannot be answered in proxy mode or behind a pipe
+    // an MFA prompt cannot be answered in proxy mode (ssh, scp) or behind a pipe
+    deps.requireTty({
+      what: 'Entering an MFA code',
+      hint: 'ssh, scp and piped commands cannot ask for one; use a profile without MFA for them',
+    });
     return deps.promptMfaCode(serial);
   });
   let region = resolveRegion({ flag: opts.region, env: deps.env, profileRegion: profileRegion(files, profile) });
   if (region === undefined) {
-    deps.requireTty();
+    deps.requireTty({
+      what: 'Choosing a region',
+      hint: 'Pass --region, set AWS_REGION or add a region to the profile',
+    });
     region = await deps.promptRegion(await deps.listRegions(credentials));
   }
   return { profile, region, credentials };

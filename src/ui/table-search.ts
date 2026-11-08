@@ -170,10 +170,11 @@ export const tableSearch = createPrompt(
       results.length > 0 &&
       (theme.helpMode === 'always' || (theme.helpMode === 'auto' && firstRender.current))
     ) {
+      const arrows = `${figures.arrowUp}${figures.arrowDown}`;
       helpTip =
         results.length > pageSize
-          ? `\n${theme.style.help('(Use arrow keys to reveal more choices)')}`
-          : `\n${theme.style.help('(Use arrow keys)')}`;
+          ? `\n${theme.style.help(`(type to search, ${arrows} to move and reveal more, Enter to select)`)}`
+          : `\n${theme.style.help(`(type to search, ${arrows} to move, Enter to select)`)}`;
     }
 
     const page = usePagination<TableChoice<Value>>({

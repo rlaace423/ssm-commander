@@ -5,6 +5,7 @@ import {
   buildScpArgs,
   buildSshArgs,
   DEFAULT_SSH_USER,
+  defaultSshUser,
   findScpRemoteOperand,
   selfCommand,
   splitSshRest,
@@ -96,6 +97,17 @@ describe('ssh arguments', () => {
       'ec2-user',
       'i-1',
     ]);
+  });
+});
+
+describe('defaultSshUser', () => {
+  test('follows the platform SSM reports: ubuntu on Ubuntu, admin on Debian, ec2-user otherwise', () => {
+    expect(defaultSshUser('Ubuntu')).toBe('ubuntu');
+    expect(defaultSshUser('Debian GNU/Linux')).toBe('admin');
+    expect(defaultSshUser('Amazon Linux')).toBe('ec2-user');
+    expect(defaultSshUser('Red Hat Enterprise Linux')).toBe('ec2-user');
+    expect(defaultSshUser('Microsoft Windows Server 2022 Datacenter')).toBe('ec2-user');
+    expect(defaultSshUser(null)).toBe(DEFAULT_SSH_USER);
   });
 });
 

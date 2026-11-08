@@ -43,6 +43,7 @@ function makeDeps(over: Partial<ConnectDeps> = {}): ConnectDeps {
     info: vi.fn(),
     spinner: () => ({ stop() {}, fail() {} }),
     requireTty: vi.fn(),
+    assertPlugin: vi.fn(),
     ...over,
   };
 }
@@ -175,7 +176,9 @@ describe('runConnect', () => {
     const deps = makeDeps();
     const err = await runConnect('i-0123456789abcdef0', {}, deps).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(CliError);
-    expect((err as CliError).message).toBe('Instance i-0123456789abcdef0 was not found in ap-northeast-2 (profile default)');
+    expect((err as CliError).message).toBe(
+      'Instance i-0123456789abcdef0 was not found in ap-northeast-2 (profile default)',
+    );
     expect((err as CliError).hint).toContain('region');
     expect(deps.pickInstance).not.toHaveBeenCalled();
   });
@@ -249,5 +252,18 @@ describe('runConnect as the default command', () => {
     const deps = makeDeps();
     await runConnect('conect', { defaultCommand: false }, deps);
     expect(deps.pickInstance).toHaveBeenCalled();
+  });
+});
+
+describe('plugin check', () => {
+  test('a missing plugin fails before any AWS call', async () => {
+    const deps = makeDeps({
+      assertPlugin: () => {
+        throw new CliError('session-manager-plugin was not found on PATH');
+      },
+    });
+    await expect(runConnect('i-1', {}, deps)).rejects.toThrow('session-manager-plugin was not found');
+    expect(deps.resolveContext).not.toHaveBeenCalled();
+    expect(deps.listInstances).not.toHaveBeenCalled();
   });
 });

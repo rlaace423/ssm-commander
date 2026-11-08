@@ -7,14 +7,22 @@
     "type": "git",
     "url": "git+https://github.com/rlaace423/ssm-commander.git"
   },
+  "homepage": "https://github.com/rlaace423/ssm-commander#readme",
+  "bugs": {
+    "url": "https://github.com/rlaace423/ssm-commander/issues"
+  },
+  "author": "Sangho Kim <rlaace423@gmail.com> (https://github.com/rlaace423)",
   "keywords": [
     "aws",
     "ssm",
     "session-manager",
     "ec2",
+    "ecs",
+    "ecs-exec",
     "cli",
     "port-forwarding",
-    "ssh"
+    "ssh",
+    "scp"
   ],
   "type": "module",
   "bin": {
@@ -33,9 +41,10 @@
     "demo:gif": "sh demo/record.sh",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:bundle": "node scripts/smoke-test.mjs",
     "lint": "biome check .",
     "format": "biome format --write .",
-    "prepublishOnly": "npm run typecheck && npm run lint && npm test && npm run build"
+    "prepublishOnly": "npm run typecheck && npm run lint && npm test && npm run build && npm run test:bundle"
   },
   "devDependencies": {
     "@aws-sdk/client-ec2": "^3.1164.0",

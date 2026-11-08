@@ -17,16 +17,18 @@ Inspired by [gossm](https://github.com/gjbae1212/gossm) (archived in 2025).
   `SSM_COMMANDER_PLUGIN_PATH` at the executable.
 - AWS credentials in `~/.aws/credentials` and `~/.aws/config` (as written by `aws configure`), one profile per
   account. The AWS CLI itself is not needed at runtime.
-- IAM permissions for the profile you use: `ec2:DescribeInstances`, `ssm:DescribeInstanceInformation`,
-  `ssm:StartSession`, `ssm:TerminateSession`. Optional: `ec2:DescribeRegions` for the region picker and
-  `sts:GetCallerIdentity` for `doctor --profile`.
-- For `exec` (ECS): `ecs:ListClusters`, `ecs:DescribeClusters`, `ecs:ListServices`, `ecs:DescribeServices`,
-  `ecs:ListTasks`, `ecs:DescribeTasks`, `ecs:ExecuteCommand`. With `--cluster` and `--task` only the last two
-  are needed. Port forwarding through a task (`forward --target ecs:...`) uses `ssm:StartSession` and
-  `ssm:TerminateSession` instead of `ecs:ExecuteCommand`. `doctor --ecs` additionally reads
-  `ecs:DescribeTaskDefinition` and, to verify the task role, `iam:SimulatePrincipalPolicy`.
+- IAM permissions for the profile you use, by command (table below).
 - On the instances: SSM Agent online and an instance profile that allows Session Manager. For `ssh` and `scp`
   additionally an SSH server and your public key in the target user's `authorized_keys`.
+
+| Command | IAM actions |
+| --- | --- |
+| `connect`, `forward` through an instance, `ssh`, `scp` | `ec2:DescribeInstances`, `ssm:DescribeInstanceInformation`, `ssm:StartSession`, `ssm:TerminateSession` |
+| `exec` | `ecs:ListClusters`, `ecs:DescribeClusters`, `ecs:ListServices`, `ecs:DescribeServices`, `ecs:ListTasks`, `ecs:DescribeTasks`, `ecs:ExecuteCommand`; with `--cluster` and `--task`, only the last two |
+| `forward --target ecs:...` | the `ecs:` listing actions of `exec` plus `ssm:StartSession` and `ssm:TerminateSession`; no `ecs:ExecuteCommand` |
+| `doctor --profile` | `sts:GetCallerIdentity` |
+| `doctor --ecs` | `ecs:ListServices`, `ecs:DescribeServices`, `ecs:ListTasks`, `ecs:DescribeTasks`, `ecs:DescribeTaskDefinition`, `iam:SimulatePrincipalPolicy` |
+| the region picker (a profile without a region) | `ec2:DescribeRegions` |
 
 ## Install
 
@@ -110,7 +112,8 @@ ssm-commander forward --ecs                # pick cluster, service and task from
 
 ![Demo: save a port-forwarding preset, then reuse it by name](demo/forward.gif)
 
-`--remote-host localhost` forwards a port of the instance itself. Values you do not pass are prompted for. With
+`--remote-host localhost` forwards a port of the instance itself. Values you do not pass are prompted for, and
+after such a run the equivalent command line is printed so that the next one needs no prompts. With
 a preset name, options given alongside override the saved values for that run. `--list` and `--delete` cannot be
 combined, nor can `--ecs` and `--target` (write the task as `--target ecs:...` instead).
 Press Ctrl+C to stop forwarding. If the local port is already taken (an earlier forward still running in another
@@ -212,6 +215,29 @@ Verified on macOS; Linux uses the same code paths. Windows: untested. The code l
 `session-manager-plugin.exe` and never goes through a shell, but ssh/scp ProxyCommand quoting and signal handling
 have not been exercised there.
 
+## Troubleshooting
+
+- **`Permission denied (publickey)` from ssh or scp.** Either the login name or the key. The default name follows
+  the platform (`ubuntu`, `admin`, `ec2-user`); pass `--user <name>` or `name@target` for an AMI with another one.
+  The key must be in that user's `authorized_keys` on the instance, and a key file given with `-i` must be readable
+  by you alone (`chmod 600`).
+- **`The instance is not connected to Systems Manager` (TargetNotConnected).** The SSM agent is not online: the
+  instance is stopped, has no agent, or its instance profile lacks the Session Manager permissions. The table shows
+  the reason in the Note column; the agent status is under Systems Manager → Fleet Manager in the console.
+- **`Local port <n> is already in use`.** Another forward (perhaps in another terminal) or another program listens
+  there. Pass another `--local-port`, or stop the other process.
+- **`session-manager-plugin was not found on PATH`.** Install it (see Requirements) or point
+  `SSM_COMMANDER_PLUGIN_PATH` at the executable; the variable must name a file that exists.
+- **`Could not reach AWS (ENOTFOUND)`.** A region name that does not exist makes an endpoint name that does not
+  resolve; check `--region` and the profile's region before suspecting the network.
+- **The terminal misbehaves after a session (no echo, Ctrl+C ignored).** Run `stty sane`. The plugin restores the
+  terminal when it exits normally; a session killed from outside can leave it in raw mode.
+- **`exec` says the container is not reachable through ECS Exec.** `ssm-commander doctor -p <profile> --ecs
+  <cluster>/<service>` checks each prerequisite: execute command on the service and the task, the platform version,
+  the agent, and the `ssmmessages` actions of the task role.
+- **`... needs an interactive terminal`.** The command runs behind a pipe or in a script; the message names the
+  option that replaces the prompt (`--profile`, `--region`, the target, `--remote-host` and so on).
+
 ## Development
 
 ```bash
@@ -222,7 +248,7 @@ npm run lint        # biome
 npm run build       # esbuild → dist/
 ```
 
-The working documents of the 0.2.0 rewrite (design notes and task plans, partly in Korean and in places overtaken
+`CHANGELOG.md` records what changed between versions. The working documents of the 0.2.0 rewrite (design notes and task plans, partly in Korean and in places overtaken
 by later changes; the README describes the current behavior) live under `docs/superpowers/`. The release checklist that exercises the real
 plugin and AWS APIs is [docs/manual-verification.md](docs/manual-verification.md); `test-infra/` holds a CloudFormation
 template, with `stack.sh` to create and delete it, for the throwaway instances and ECS services that checklist uses.

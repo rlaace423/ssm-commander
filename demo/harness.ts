@@ -232,6 +232,7 @@ const common = {
   warn,
   spinner,
   requireTty: () => requireTty(),
+  assertPlugin: () => {},
 };
 
 const connect: ConnectDeps = { ...common, runSession, saveHistory: async () => {}, now: () => new Date() };
@@ -257,6 +258,7 @@ const exec: ExecDeps = {
   runExecSession: (ctx, input) =>
     spawnInherited(process.execPath, [FAKE_SESSION, 'exec', ctx.profile, input.container], process.env),
   requireTty: () => requireTty(),
+  assertPlugin: () => {},
   info,
   spinner,
   loadHistory,

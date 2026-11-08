@@ -53,6 +53,7 @@ function makeDeps(over: Partial<SshDeps> = {}): SshDeps {
     warn: vi.fn(),
     spinner: () => ({ stop() {}, fail() {} }),
     requireTty: vi.fn(),
+    assertPlugin: vi.fn(),
     ...over,
   };
 }
@@ -231,7 +232,9 @@ describe('login name by platform', () => {
 
     const ok = platformDeps();
     await runSsh(['ubu'], {}, ok);
-    expect((ok.info as ReturnType<typeof vi.fn>).mock.calls.map(([m]) => String(m)).some((m) => m.includes('--user'))).toBe(false);
+    expect(
+      (ok.info as ReturnType<typeof vi.fn>).mock.calls.map(([m]) => String(m)).some((m) => m.includes('--user')),
+    ).toBe(false);
   });
 });
 
@@ -253,5 +256,19 @@ describe('ssh short flags that belong to ssh', () => {
     expect(deps.resolveContext).not.toHaveBeenCalled();
     await runSsh(['web', '-p', '2222', 'hostname'], {}, deps); // a real port is passed through
     expect((deps.spawn as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[1]).toContain('2222');
+  });
+});
+
+describe('plugin check', () => {
+  test('ssh and scp fail before any AWS call when the plugin is missing', async () => {
+    const missing = () => {
+      throw new CliError('session-manager-plugin was not found on PATH');
+    };
+    const ssh = makeDeps({ assertPlugin: missing });
+    await expect(runSsh(['web', 'hostname'], {}, ssh)).rejects.toThrow('session-manager-plugin was not found');
+    expect(ssh.resolveContext).not.toHaveBeenCalled();
+    const scp = makeDeps({ assertPlugin: missing });
+    await expect(runScp(['./a', 'web:/tmp/a'], {}, scp)).rejects.toThrow('session-manager-plugin was not found');
+    expect(scp.spawn).not.toHaveBeenCalled();
   });
 });

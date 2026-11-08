@@ -37,7 +37,9 @@ describe('createTable within a maximum width', () => {
     { key: 'type', header: 'Type', dropOrder: 2 },
     { key: 'ip', header: 'Public IP', dropOrder: 1 },
   ];
-  const rows: Row[] = [{ name: 'a-rather-long-instance-name', id: 'i-0123456789abcdef0', type: 't3.micro', ip: '3.3.3.3' }];
+  const rows: Row[] = [
+    { name: 'a-rather-long-instance-name', id: 'i-0123456789abcdef0', type: 't3.micro', ip: '3.3.3.3' },
+  ];
   const cell = (r: Row, k: string) => r[k] ?? '';
   const full = createTable(columns, rows, cell);
   const width = (t: { header: string }) => stringWidth(t.header.split('\n')[0] ?? '');

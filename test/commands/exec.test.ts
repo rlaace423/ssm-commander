@@ -85,6 +85,7 @@ function makeDeps(world: World, over: Partial<ExecDeps> = {}) {
     pickContainer: vi.fn(async (t: TaskRow) => t.containers[0] as ContainerInfo),
     runExecSession: vi.fn(async () => 0),
     requireTty: vi.fn(),
+    assertPlugin: vi.fn(),
     info: vi.fn(),
     spinner: vi.fn(() => ({ stop: vi.fn(), fail: vi.fn() })),
     loadHistory: vi.fn(async () => emptyHistory()),
@@ -335,7 +336,9 @@ describe('runExec with explicit targets', () => {
 describe('messages name the region and profile', () => {
   test('a region without clusters', async () => {
     const { deps } = makeDeps({ clusters: [], services: {}, tasks: {} });
-    await expect(runExec(undefined, {}, deps)).rejects.toThrow('No ECS clusters found in ap-northeast-2 (profile prod)');
+    await expect(runExec(undefined, {}, deps)).rejects.toThrow(
+      'No ECS clusters found in ap-northeast-2 (profile prod)',
+    );
   });
 
   test('a cluster ECS does not know (ClusterNotFoundException) is named together with its region', async () => {
@@ -353,5 +356,17 @@ describe('messages name the region and profile', () => {
     const { deps } = makeDeps(twoOfEverything);
     await runExec(undefined, {}, deps);
     expect(deps.requireTty).toHaveBeenCalledWith(expect.objectContaining({ what: expect.stringContaining('exec') }));
+  });
+});
+
+describe('plugin check', () => {
+  test('a missing plugin fails before any AWS call', async () => {
+    const { deps } = makeDeps(twoOfEverything, {
+      assertPlugin: () => {
+        throw new CliError('session-manager-plugin was not found on PATH');
+      },
+    });
+    await expect(runExec('prod/api', {}, deps)).rejects.toThrow('session-manager-plugin was not found');
+    expect(deps.resolveContext).not.toHaveBeenCalled();
   });
 });

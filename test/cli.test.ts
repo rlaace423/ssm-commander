@@ -9,7 +9,7 @@ import type { ConnectDeps } from '../src/commands/connect.js';
 describe('createProgram', () => {
   test('hands injected deps to the command instead of the real wiring', async () => {
     const resolveContext = vi.fn().mockRejectedValue(new Error('stop here'));
-    const connect = { resolveContext, requireTty: () => {} } as unknown as ConnectDeps;
+    const connect = { resolveContext, requireTty: () => {}, assertPlugin: () => {} } as unknown as ConnectDeps;
     const program = createProgram({ connect });
     await expect(program.parseAsync(['node', 'cli', 'connect', 'web-1'])).rejects.toThrow('stop here');
     expect(resolveContext).toHaveBeenCalledWith({ profile: undefined, region: undefined });
@@ -40,7 +40,7 @@ describe('createProgram', () => {
       expect(debug?.hidden, name).toBe(true);
     }
     const resolveContext = vi.fn().mockRejectedValue(new Error('stop here'));
-    const connect = { resolveContext, requireTty: () => {} } as unknown as ConnectDeps;
+    const connect = { resolveContext, requireTty: () => {}, assertPlugin: () => {} } as unknown as ConnectDeps;
     const err = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     expect(await main(['node', 'cli', 'connect', '--debug', 'web-1'], { connect })).toBe(1);
     expect(resolveContext).toHaveBeenCalled();
@@ -157,7 +157,11 @@ describe('connect as the default command', () => {
     connectable: true,
     reason: null,
   };
-  const ctx = { profile: 'default', region: 'ap-northeast-2', credentials: async () => ({ accessKeyId: 'a', secretAccessKey: 'b' }) };
+  const ctx = {
+    profile: 'default',
+    region: 'ap-northeast-2',
+    credentials: async () => ({ accessKeyId: 'a', secretAccessKey: 'b' }),
+  };
   const makeDeps = () =>
     ({
       resolveContext: vi.fn(async () => ctx),
@@ -172,6 +176,7 @@ describe('connect as the default command', () => {
       info: vi.fn(),
       spinner: () => ({ stop() {}, fail() {} }),
       requireTty: vi.fn(),
+      assertPlugin: vi.fn(),
     }) as unknown as ConnectDeps;
 
   test('a mistyped command word is reported as such, but only when connect was implied', async () => {

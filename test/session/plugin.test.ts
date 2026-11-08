@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'vitest';
+import { CliError, PluginNotFoundError } from '../../src/errors.js';
 import {
+  assertPluginInstalled,
   buildPluginInvocation,
   compareVersions,
   ENV_VAR_MIN_VERSION,
@@ -10,7 +12,6 @@ import {
   pluginFileNames,
   RECOMMENDED_MIN_VERSION,
 } from '../../src/session/plugin.js';
-import { CliError } from '../../src/errors.js';
 import type { SessionStart } from '../../src/types.js';
 
 const session: SessionStart = { SessionId: 's-1', StreamUrl: 'wss://x', TokenValue: 'tok' };
@@ -75,6 +76,16 @@ describe('findPluginPath', () => {
   test('returns null when nothing matches', () => {
     expect(findPluginPath({ env: { PATH: '/usr/bin' }, platform: 'linux', exists: () => false })).toBeNull();
     expect(findPluginPath({ env: {}, platform: 'linux', exists: () => true })).toBeNull();
+  });
+});
+
+describe('assertPluginInstalled', () => {
+  test('passes when the plugin is found and throws PluginNotFoundError when it is not', () => {
+    const found = { env: { PATH: '/usr/bin' }, platform: 'linux' as const, exists: () => true };
+    expect(() => assertPluginInstalled(found)).not.toThrow();
+    const missing = { ...found, exists: () => false };
+    expect(() => assertPluginInstalled(missing)).toThrow(PluginNotFoundError);
+    expect(() => assertPluginInstalled(missing)).toThrow('session-manager-plugin was not found on PATH');
   });
 });
 

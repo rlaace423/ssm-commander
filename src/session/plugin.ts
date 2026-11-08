@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { CliError, PluginNotFoundError } from '../errors.js';
 import type { SessionStart, StartSessionInput } from '../types.js';
@@ -38,6 +39,17 @@ export function findPluginPath(input: {
     }
   }
   return null;
+}
+
+/** Fails when the plugin is missing, so a command can stop before any AWS call instead of after the instance was picked. */
+export function assertPluginInstalled(
+  input: { env: NodeJS.ProcessEnv; platform: NodeJS.Platform; exists: (p: string) => boolean } = {
+    env: process.env,
+    platform: process.platform,
+    exists: existsSync,
+  },
+): void {
+  if (findPluginPath(input) === null) throw new PluginNotFoundError();
 }
 
 export function parseVersionOutput(output: string): string | null {

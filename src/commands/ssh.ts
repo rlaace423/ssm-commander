@@ -12,6 +12,7 @@ import {
   splitSshRest,
   splitUserAtTarget,
 } from '../passthrough.js';
+import { assertPluginInstalled } from '../session/plugin.js';
 import { runExternal, type SpawnFn } from '../session/spawn-inherited.js';
 import { type HistoryFile, loadHistory, recentInstanceIds } from '../storage/history.js';
 import { configDir } from '../storage/paths.js';
@@ -49,6 +50,8 @@ export interface SshDeps {
   warn: (message: string) => void;
   spinner: (text: string) => Spinner;
   requireTty: (need?: TtyNeed) => void;
+  /** Throws when session-manager-plugin cannot be found; runs before any AWS call. */
+  assertPlugin: () => void;
 }
 
 export function defaultSshDeps(): SshDeps {
@@ -64,6 +67,7 @@ export function defaultSshDeps(): SshDeps {
     warn,
     spinner,
     requireTty: (need) => requireTty(need),
+    assertPlugin: () => assertPluginInstalled(),
   };
 }
 
@@ -75,6 +79,7 @@ export async function prepareTarget(
   deps: SshDeps,
 ): Promise<{ ctx: AwsContext; row: InstanceRow; proxyCommand: string }> {
   if (target === undefined) deps.requireTty(PICK_INSTANCE_NEED); // fail before any AWS call
+  deps.assertPlugin(); // the proxy child would fail later, inside ssh, with a far less readable message
   const ctx = await deps.resolveContext({ profile: opts.profile, region: opts.region });
   const recentIds = recentInstanceIds(await deps.loadHistory(deps.configDir), ctx.profile, ctx.region);
   const listing = await rowsOrTrustedId(target, () => fetchInstances(ctx, recentIds, deps), deps.warn);

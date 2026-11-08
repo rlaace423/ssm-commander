@@ -7,7 +7,9 @@ const pipe = { stdin: { isTTY: false }, stdout: { isTTY: true } };
 
 describe('requireTty', () => {
   test('passes when stdin and stdout are terminals', () => {
-    expect(() => requireTty({ what: 'Picking an instance', hint: 'Pass the instance name or id' }, terminal)).not.toThrow();
+    expect(() =>
+      requireTty({ what: 'Picking an instance', hint: 'Pass the instance name or id' }, terminal),
+    ).not.toThrow();
   });
 
   test('names what needed the terminal and what to pass instead', () => {

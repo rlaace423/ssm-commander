@@ -143,6 +143,7 @@ function makeDeps(over: Partial<ForwardDeps> = {}, presets: PresetsFile = emptyP
     spinner: () => ({ stop() {}, fail() {} }),
     loadHistory: vi.fn(async () => emptyHistory()),
     checkLocalPort: vi.fn(async () => {}),
+    assertPlugin: vi.fn(),
     ...over,
   };
   return deps;
@@ -491,6 +492,59 @@ describe('conflicting or malformed options', () => {
     );
     const picker = makeDeps();
     await runForward(undefined, ports, picker);
-    expect(picker.requireTty).toHaveBeenCalledWith(expect.objectContaining({ hint: expect.stringContaining('--target') }));
+    expect(picker.requireTty).toHaveBeenCalledWith(
+      expect.objectContaining({ hint: expect.stringContaining('--target') }),
+    );
+  });
+});
+
+describe('plugin check', () => {
+  const missing = () => {
+    throw new CliError('session-manager-plugin was not found on PATH');
+  };
+
+  test('a missing plugin fails before any AWS call, but --list and --delete need no plugin', async () => {
+    const deps = makeDeps({ assertPlugin: missing });
+    await expect(
+      runForward(undefined, { target: 'web', remoteHost: 'localhost', remotePort: '22', localPort: '2222' }, deps),
+    ).rejects.toThrow('session-manager-plugin was not found');
+    expect(deps.resolveContext).not.toHaveBeenCalled();
+    expect(await runForward(undefined, { list: true }, makeDeps({ assertPlugin: missing }))).toBe(0);
+  });
+});
+
+describe('hint after an interactive forward', () => {
+  const infos = (deps: ForwardDeps) => (deps.info as ReturnType<typeof vi.fn>).mock.calls.map(([m]) => String(m));
+  const prompts = () =>
+    vi.fn().mockResolvedValueOnce('db.internal').mockResolvedValueOnce('5432').mockResolvedValueOnce('15432');
+
+  test('after picking and answering prompts, the equivalent command line is shown last', async () => {
+    const deps = makeDeps({ descriptionInput: prompts() });
+    await runForward(undefined, {}, deps);
+    expect(infos(deps).at(-1)).toBe(
+      'To repeat this without prompts: ssm-commander forward --target web --remote-host db.internal --remote-port 5432 --local-port 15432 -p default -r ap-northeast-2 (add --save <name> to keep it as a preset)',
+    );
+  });
+
+  test('an ECS hop is written as --target ecs:cluster/service, with the container chosen among several', async () => {
+    const deps = makeDeps({ descriptionInput: prompts() });
+    await runForward(undefined, { ecs: true }, deps);
+    expect(infos(deps).at(-1)).toContain('--target ecs:prod/api --container app --remote-host db.internal');
+  });
+
+  test('nothing is suggested for a preset, a complete command line, or a run that was saved', async () => {
+    const fromPreset = makeDeps({}, upsertPreset(emptyPresets(), preset));
+    await runForward('web-ssh', {}, fromPreset);
+    const complete = makeDeps();
+    await runForward(
+      undefined,
+      { target: 'web', remoteHost: 'localhost', remotePort: '22', localPort: '2222' },
+      complete,
+    );
+    const saved = makeDeps({ descriptionInput: prompts() });
+    await runForward(undefined, { save: 'new' }, saved);
+    for (const deps of [fromPreset, complete, saved]) {
+      expect(infos(deps).some((m) => m.startsWith('To repeat this'))).toBe(false);
+    }
   });
 });

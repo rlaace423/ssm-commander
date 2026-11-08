@@ -18,6 +18,7 @@ import {
 } from '../aws/ecs.js';
 import { resolveContext } from '../context.js';
 import { AccessDeniedError, CliError, describeAwsError, ECS_IAM_ACTIONS } from '../errors.js';
+import { assertPluginInstalled } from '../session/plugin.js';
 import { defaultRunExecDeps, type ExecSessionInput, runExecSession } from '../session/run-exec.js';
 import {
   type EcsTargetKey,
@@ -63,6 +64,8 @@ export interface ExecDeps extends EcsSelectionDeps {
   resolveContext: (opts: { profile?: string; region?: string }) => Promise<AwsContext>;
   runExecSession: (ctx: AwsContext, input: ExecSessionInput) => Promise<number>;
   requireTty: (need?: TtyNeed) => void;
+  /** Throws when session-manager-plugin cannot be found; runs before any AWS call. */
+  assertPlugin: () => void;
   info: (message: string) => void;
   spinner: (text: string) => Spinner;
   loadHistory: (dir: string) => Promise<HistoryFile>;
@@ -91,6 +94,7 @@ export function defaultExecDeps(): ExecDeps {
     resolveContext: (opts) => resolveContext(opts),
     runExecSession: async (ctx, input) => runExecSession(ctx, input, await defaultRunExecDeps(ctx)),
     requireTty: (need) => requireTty(need),
+    assertPlugin: () => assertPluginInstalled(),
     info,
     spinner,
     loadHistory,
@@ -356,6 +360,7 @@ export async function runExec(
     what: 'exec',
     hint: 'The command runs interactively in the container, so there is nothing to pass instead',
   });
+  deps.assertPlugin();
   const parsed: ExecTarget = target === undefined ? {} : parseExecTarget(target);
   const want: ExecTarget = {
     cluster: opts.cluster ?? parsed.cluster,

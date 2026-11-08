@@ -3,6 +3,7 @@ import { filterConnectable, listInstances } from '../aws/instances.js';
 import { resolveContext } from '../context.js';
 import { CliError, describeAwsError, IAM_ACTIONS } from '../errors.js';
 import { assertLocalPortFree } from '../session/local-port.js';
+import { assertPluginInstalled } from '../session/plugin.js';
 import { defaultRunSessionDeps, runSession } from '../session/run-session.js';
 import { type HistoryFile, loadHistory, recentEcsTargets, recentInstanceIds } from '../storage/history.js';
 import { configDir } from '../storage/paths.js';
@@ -81,6 +82,8 @@ export interface ForwardDeps {
   runSession: (ctx: AwsContext, input: StartSessionInput) => Promise<number>;
   /** Rejects with a CliError when the local port cannot be opened; runs before StartSession. */
   checkLocalPort: (port: number) => Promise<void>;
+  /** Throws when session-manager-plugin cannot be found; runs before any AWS call. */
+  assertPlugin: () => void;
   loadPresets: (dir: string) => Promise<PresetsFile>;
   savePresets: (dir: string, file: PresetsFile) => Promise<void>;
   configDir: string;
@@ -102,6 +105,7 @@ export function defaultForwardDeps(): ForwardDeps {
     ecs: defaultEcsSelectionDeps(),
     runSession: (ctx, input) => runSession(ctx, input, defaultRunSessionDeps(ctx)),
     checkLocalPort: (port) => assertLocalPortFree(port),
+    assertPlugin: () => assertPluginInstalled(),
     loadPresets,
     savePresets,
     configDir: configDir(),
@@ -134,6 +138,23 @@ const SETTINGS_NEED: TtyNeed = {
   what: 'Asking for the forward settings',
   hint: 'Pass --remote-host, --remote-port and --local-port',
 };
+
+/** Quoted for the shell unless it is made of the characters names, ids and hosts are made of. */
+function shellWord(value: string): string {
+  return /^[\w.:/@-]+$/.test(value) ? value : `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+/** The command line that repeats an interactive run without its prompts. */
+function rerunCommand(hop: Hop, ctx: AwsContext, remoteHost: string, remotePort: number, localPort: number): string {
+  const target =
+    hop.kind === 'ecs' ? `ecs:${hop.cluster}/${hop.service ?? STANDALONE_SERVICE}` : (hop.name ?? hop.instanceId);
+  const container =
+    hop.kind === 'ecs' && hop.savedContainer !== null ? ` --container ${shellWord(hop.savedContainer)}` : '';
+  return (
+    `ssm-commander forward --target ${shellWord(target)}${container} --remote-host ${shellWord(remoteHost)} ` +
+    `--remote-port ${remotePort} --local-port ${localPort} -p ${shellWord(ctx.profile)} -r ${ctx.region}`
+  );
+}
 
 function describeHop(preset: ForwardPreset): string {
   return preset.kind === 'ecs'
@@ -271,7 +292,9 @@ export async function runForward(
     preset !== undefined
       ? presetKind(preset) === 'ecs'
       : opts.ecs === true || (opts.target !== undefined && isEcsTarget(opts.target));
-  if (preset === undefined && opts.target === undefined) deps.requireTty(PICK_HOP_NEED); // before any AWS call
+  const pickedHop = preset === undefined && opts.target === undefined;
+  if (pickedHop) deps.requireTty(PICK_HOP_NEED); // before any AWS call
+  deps.assertPlugin();
 
   const ctx = await deps.resolveContext({
     profile: opts.profile ?? preset?.profile,
@@ -290,9 +313,8 @@ export async function runForward(
   const knownHost = opts.remoteHost ?? preset?.remoteHost;
   const knownRemotePort = remotePortOption ?? preset?.remotePort;
   const knownLocalPort = localPortOption ?? preset?.localPort;
-  if (knownHost === undefined || knownRemotePort === undefined || knownLocalPort === undefined) {
-    deps.requireTty(SETTINGS_NEED);
-  }
+  const asked = knownHost === undefined || knownRemotePort === undefined || knownLocalPort === undefined;
+  if (asked) deps.requireTty(SETTINGS_NEED);
 
   const remoteHost =
     knownHost ??
@@ -353,7 +375,12 @@ export async function runForward(
   deps.info(`Forwarding localhost:${localPort} -> ${remoteHost}:${remotePort} via ${via}. Press Ctrl+C to stop.`);
   const target = hop.kind === 'ecs' ? buildExecTarget(hop.cluster, hop.taskId, hop.runtimeId) : hop.instanceId;
   try {
-    return await deps.runSession(ctx, buildForwardSessionInput(target, remoteHost, remotePort, localPort));
+    const code = await deps.runSession(ctx, buildForwardSessionInput(target, remoteHost, remotePort, localPort));
+    if ((pickedHop || asked) && opts.save === undefined) {
+      const command = rerunCommand(hop, ctx, remoteHost, remotePort, localPort);
+      deps.info(`To repeat this without prompts: ${command} (add --save <name> to keep it as a preset)`);
+    }
+    return code;
   } catch (err) {
     throw describeAwsError(err, { profile: ctx.profile, region: ctx.region, action: IAM_ACTIONS.ssmStart });
   }

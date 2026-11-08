@@ -1,6 +1,7 @@
 import { filterConnectable, listInstances } from '../aws/instances.js';
 import { resolveContext } from '../context.js';
 import { CliError, describeAwsError, IAM_ACTIONS } from '../errors.js';
+import { assertPluginInstalled } from '../session/plugin.js';
 import { defaultRunSessionDeps, runSession } from '../session/run-session.js';
 import { type HistoryFile, loadHistory, recentInstanceIds, recordConnection, saveHistory } from '../storage/history.js';
 import { configDir } from '../storage/paths.js';
@@ -36,6 +37,8 @@ export interface ConnectDeps {
   info: (message: string) => void;
   spinner: (text: string) => Spinner;
   requireTty: (need?: TtyNeed) => void;
+  /** Throws when session-manager-plugin cannot be found; runs before any AWS call. */
+  assertPlugin: () => void;
 }
 
 export function defaultConnectDeps(): ConnectDeps {
@@ -52,6 +55,7 @@ export function defaultConnectDeps(): ConnectDeps {
     info,
     spinner,
     requireTty: (need) => requireTty(need),
+    assertPlugin: () => assertPluginInstalled(),
   };
 }
 
@@ -65,6 +69,7 @@ export async function runConnect(
   deps: ConnectDeps = defaultConnectDeps(),
 ): Promise<number> {
   if (target === undefined) deps.requireTty(PICK_INSTANCE_NEED); // fail before any AWS call
+  deps.assertPlugin();
   const ctx = await deps.resolveContext({ profile: opts.profile, region: opts.region });
   const history = await deps.loadHistory(deps.configDir);
   const recentIds = recentInstanceIds(history, ctx.profile, ctx.region);

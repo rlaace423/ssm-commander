@@ -2,10 +2,11 @@
 
 Notable changes to ssm-commander. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## 0.2.0 (not yet published)
+## 1.0.0 - 2026-11-08
 
-A rewrite. 0.1 wrapped the AWS CLI: it stored `aws ssm` command lines and replayed them. 0.2.0 calls AWS through
+A rewrite. 0.1 wrapped the AWS CLI: it stored `aws ssm` command lines and replayed them. 1.0.0 calls AWS through
 the SDK and starts `session-manager-plugin` itself, the way the AWS CLI does, so the AWS CLI is no longer needed.
+The same contents were published as 0.2.0 earlier the same day; 1.0.0 is that release under its final number.
 
 ### Added
 

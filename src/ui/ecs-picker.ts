@@ -2,7 +2,7 @@ import { select } from '@inquirer/prompts';
 import type { ClusterRow, ContainerInfo, ServiceRow, TaskRow } from '../aws/ecs.js';
 import { CliError } from '../errors.js';
 import { promptIo, requireTty } from './prompts.js';
-import { createTable, type TableColumn } from './table.js';
+import { createTable, markRecent, type TableColumn } from './table.js';
 import { type TableChoice, tableSearch } from './table-search.js';
 
 export const CLUSTER_COLUMNS: TableColumn[] = [
@@ -79,13 +79,24 @@ export function formatAge(started: Date, now: Date): string {
     .join(' ');
 }
 
-export function buildClusterChoices(rows: ClusterRow[]): Choices<ClusterRow> {
-  return toChoices(CLUSTER_COLUMNS, rows, (row, key) => text(row[key as keyof ClusterRow]));
+/** Names the history knows (recent clusters, or recent services of the shown cluster) get the `*` mark. */
+export interface PickOptions {
+  recent: string[];
 }
 
-export function buildServiceChoices(rows: ServiceRow[]): Choices<ServiceRow> {
+export function buildClusterChoices(rows: ClusterRow[], recent: string[] = []): Choices<ClusterRow> {
+  const marked = new Set(recent);
+  return toChoices(CLUSTER_COLUMNS, rows, (row, key) =>
+    key === 'name' ? markRecent(row.name, marked.has(row.name)) : text(row[key as keyof ClusterRow]),
+  );
+}
+
+export function buildServiceChoices(rows: ServiceRow[], recent: string[] = []): Choices<ServiceRow> {
+  const marked = new Set(recent);
   return toChoices(SERVICE_COLUMNS, rows, (row, key) => {
     switch (key) {
+      case 'name':
+        return markRecent(row.name, marked.has(row.name));
       case 'tasks':
         return `${row.running}/${row.desired ?? '-'}`;
       case 'execEnabled':
@@ -123,10 +134,10 @@ export function matchesTask(row: TaskRow, term: string): boolean {
   );
 }
 
-export async function pickCluster(rows: ClusterRow[]): Promise<ClusterRow> {
+export async function pickCluster(rows: ClusterRow[], opts: PickOptions = { recent: [] }): Promise<ClusterRow> {
   if (rows.length === 0) throw new CliError('No ECS clusters found');
   requireTty();
-  const { header, footer, choices } = buildClusterChoices(rows);
+  const { header, footer, choices } = buildClusterChoices(rows, opts.recent);
   return tableSearch<ClusterRow>(
     {
       message: 'Select a cluster',
@@ -138,10 +149,14 @@ export async function pickCluster(rows: ClusterRow[]): Promise<ClusterRow> {
   );
 }
 
-export async function pickService(rows: ServiceRow[], cluster: string): Promise<ServiceRow> {
+export async function pickService(
+  rows: ServiceRow[],
+  cluster: string,
+  opts: PickOptions = { recent: [] },
+): Promise<ServiceRow> {
   if (rows.length === 0) throw new CliError(`No services or running tasks in cluster "${cluster}"`);
   requireTty();
-  const { header, footer, choices } = buildServiceChoices(rows);
+  const { header, footer, choices } = buildServiceChoices(rows, opts.recent);
   return tableSearch<ServiceRow>(
     {
       message: `Select a service in ${cluster}`,

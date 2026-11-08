@@ -13,6 +13,7 @@ import {
   parseExecTarget,
   type ServiceSummary,
   STANDALONE_SERVICE,
+  sortRecentFirst,
   sortTasks,
   summarizeServices,
   taskIdFromArn,
@@ -169,6 +170,18 @@ describe('summarizeServices and tasksOfService', () => {
     );
     const sorted = sortTasks([rows[1] as (typeof rows)[0], older, rows[0] as (typeof rows)[0]]);
     expect(sorted.map((t) => t.taskId.slice(-1))).toEqual(['f', 'a', 'e']);
+  });
+});
+
+describe('sortRecentFirst', () => {
+  test('puts the recently used names first in that order and keeps the rest in their order', () => {
+    const rows = [{ name: 'api' }, { name: 'batch' }, { name: 'worker' }];
+    expect(sortRecentFirst(rows, ['worker', 'gone', 'api', 'worker']).map((r) => r.name)).toEqual([
+      'worker',
+      'api',
+      'batch',
+    ]);
+    expect(sortRecentFirst(rows, []).map((r) => r.name)).toEqual(['api', 'batch', 'worker']);
   });
 });
 

@@ -1,7 +1,7 @@
 import { CliError } from '../errors.js';
 import type { InstanceRow } from '../types.js';
 import { promptIo, requireTty } from './prompts.js';
-import { createTable, type TableColumn } from './table.js';
+import { createTable, markRecent, type TableColumn } from './table.js';
 import { type TableChoice, tableSearch } from './table-search.js';
 
 export const INSTANCE_COLUMNS: TableColumn[] = [
@@ -15,8 +15,6 @@ export const INSTANCE_COLUMNS: TableColumn[] = [
   { key: 'reason', header: 'Note' },
 ];
 
-const RECENT_MARK = '*';
-
 export interface InstanceChoices {
   header: string;
   footer: string;
@@ -28,7 +26,7 @@ export function buildInstanceChoices(rows: InstanceRow[], recentIds: string[]): 
   const table = createTable(INSTANCE_COLUMNS, rows, (row, key) => {
     const value = row[key as keyof InstanceRow];
     const text = value === null || value === undefined ? '' : String(value);
-    return key === 'name' && recent.has(row.instanceId) ? `${RECENT_MARK} ${text}` : text;
+    return key === 'name' ? markRecent(text, recent.has(row.instanceId)) : text;
   });
   return {
     header: table.header,

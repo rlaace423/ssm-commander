@@ -28,6 +28,9 @@ Linux work well) and, for `exec`, an ECS service with `enableExecuteCommand` on.
 - [ ] `ssm-commander exec -p <profile>` shows the cluster table (or uses the only cluster), then the service table
   where a service without ECS Exec is dimmed with `exec disabled`, then the task table (or uses the only task),
   and opens a shell in the container; `hostname` prints the task's hostname; `exit` ends the session.
+- [ ] Running `ssm-commander exec -p <profile>` again lists the cluster and the service of that session first,
+  marked with `*`; `~/.ssm-commander/history.json` gained an entry with `"kind": "ecs"` and the service, not the
+  task id. `ssm-commander forward -p <profile> --ecs` shows the same marks.
 - [ ] `ssm-commander exec -p <profile> --cluster <cluster> --task <task-id>` opens the shell directly, without
   listing clusters or services.
 - [ ] `ssm-commander exec -p <profile> <cluster>/<service-without-exec>` fails with `cannot be reached: exec disabled`.

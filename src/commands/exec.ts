@@ -11,6 +11,7 @@ import {
   type ServiceRow,
   type ServiceSummary,
   STANDALONE_SERVICE,
+  sortRecentFirst,
   summarizeServices,
   type TaskRow,
   tasksOfService,
@@ -18,8 +19,17 @@ import {
 import { resolveContext } from '../context.js';
 import { AccessDeniedError, CliError, describeAwsError, ECS_IAM_ACTIONS } from '../errors.js';
 import { defaultRunExecDeps, type ExecSessionInput, runExecSession } from '../session/run-exec.js';
+import {
+  type EcsTargetKey,
+  type HistoryFile,
+  loadHistory,
+  recentEcsTargets,
+  recordExec,
+  saveHistory,
+} from '../storage/history.js';
+import { configDir } from '../storage/paths.js';
 import type { AwsContext, Sender } from '../types.js';
-import { pickCluster, pickContainer, pickService, pickTask } from '../ui/ecs-picker.js';
+import { type PickOptions, pickCluster, pickContainer, pickService, pickTask } from '../ui/ecs-picker.js';
 import { info, type Spinner, spinner } from '../ui/output.js';
 import { requireTty } from '../ui/prompts.js';
 
@@ -43,8 +53,8 @@ export interface EcsSelectionDeps {
   fetchServices: (ecs: Sender, cluster: string) => Promise<ServiceSummary[]>;
   fetchTasks: (ecs: Sender, cluster: string, service?: string) => Promise<TaskRow[]>;
   describeTask: (ecs: Sender, cluster: string, taskId: string) => Promise<TaskRow | null>;
-  pickCluster: (rows: ClusterRow[]) => Promise<ClusterRow>;
-  pickService: (rows: ServiceRow[], cluster: string) => Promise<ServiceRow>;
+  pickCluster: (rows: ClusterRow[], opts: PickOptions) => Promise<ClusterRow>;
+  pickService: (rows: ServiceRow[], cluster: string, opts: PickOptions) => Promise<ServiceRow>;
   pickTask: (rows: TaskRow[], service: string) => Promise<TaskRow>;
   pickContainer: (task: TaskRow) => Promise<ContainerInfo>;
 }
@@ -55,6 +65,10 @@ export interface ExecDeps extends EcsSelectionDeps {
   requireTty: () => void;
   info: (message: string) => void;
   spinner: (text: string) => Spinner;
+  loadHistory: (dir: string) => Promise<HistoryFile>;
+  saveHistory: (dir: string, file: HistoryFile) => Promise<void>;
+  configDir: string;
+  now: () => Date;
 }
 
 export function defaultEcsSelectionDeps(): EcsSelectionDeps {
@@ -79,6 +93,10 @@ export function defaultExecDeps(): ExecDeps {
     requireTty: () => requireTty(),
     info,
     spinner,
+    loadHistory,
+    saveHistory,
+    configDir: configDir(),
+    now: () => new Date(),
   };
 }
 
@@ -133,6 +151,7 @@ async function pickFrom<T extends { connectable: boolean }>(
 async function chooseCluster(
   ecs: Sender,
   connectableOnly: boolean,
+  recent: EcsTargetKey[],
   step: Step,
   deps: EcsSelectionDeps,
 ): Promise<string> {
@@ -144,8 +163,12 @@ async function chooseCluster(
     () => deps.fetchClusters(ecs),
   );
   if (clusters.length === 0) throw new CliError('No ECS clusters found');
-  const chosen = await pickFrom(clusters, connectableOnly, deps.pickCluster, (row) =>
-    step.info(`Using the only cluster "${row.name}"`),
+  const recentNames = [...new Set(recent.map((key) => key.cluster))];
+  const chosen = await pickFrom(
+    sortRecentFirst(clusters, recentNames),
+    connectableOnly,
+    (rows) => deps.pickCluster(rows, { recent: recentNames }),
+    (row) => step.info(`Using the only cluster "${row.name}"`),
   );
   return chosen.name;
 }
@@ -193,12 +216,13 @@ const taskUsed = (service: string) => (row: TaskRow, candidates: number) =>
 async function chooseTask(
   ecs: Sender,
   want: ExecTarget,
-  connectableOnly: boolean,
-  autoPickTask: boolean,
+  opts: EcsSelectOptions,
   step: Step,
   deps: EcsSelectionDeps,
 ): Promise<TaskRow> {
-  const cluster = want.cluster ?? (await chooseCluster(ecs, connectableOnly, step, deps));
+  const { connectableOnly, auto: autoPickTask } = opts;
+  const recent = opts.recent ?? [];
+  const cluster = want.cluster ?? (await chooseCluster(ecs, connectableOnly, recent, step, deps));
 
   if (want.service !== undefined) {
     const service = want.service;
@@ -231,10 +255,11 @@ async function chooseTask(
   );
   const rows = summarizeServices(services, tasks);
   if (rows.length === 0) throw new CliError(`No services or running tasks in cluster "${cluster}"`);
+  const recentNames = recent.filter((key) => key.cluster === cluster).map((key) => key.service ?? STANDALONE_SERVICE);
   const service = await pickFrom(
-    rows,
+    sortRecentFirst(rows, recentNames),
     connectableOnly,
-    (candidates) => deps.pickService(candidates, cluster),
+    (candidates) => deps.pickService(candidates, cluster, { recent: recentNames }),
     (row) => step.info(`Using the only service "${row.name}" in cluster "${cluster}"`),
   );
   const own = tasksOfService(tasks, service.name);
@@ -274,6 +299,8 @@ export interface EcsSelectOptions {
   container?: string;
   /** Presets must not prompt: take the newest reachable task and the first container with a running agent. */
   auto: boolean;
+  /** Clusters and services from the connection history, most recent first; listed first and marked with `*`. */
+  recent?: EcsTargetKey[];
 }
 
 export interface EcsSelection {
@@ -295,7 +322,7 @@ export async function selectEcsContainer(
   const task =
     want.task !== undefined
       ? await findTask(ecs, want.cluster, want.task, opts.connectableOnly, step, deps)
-      : await chooseTask(ecs, want, opts.connectableOnly, opts.auto, step, deps);
+      : await chooseTask(ecs, want, opts, step, deps);
   if (!task.connectable) throw new CliError(`Task ${task.taskId} cannot be reached: ${task.reason}`);
 
   const container = await chooseContainer(task, opts.container, opts.auto, deps);
@@ -322,12 +349,18 @@ export async function runExec(
   const command = opts.command ?? DEFAULT_COMMAND;
 
   const ctx = await deps.resolveContext({ profile: opts.profile, region: opts.region });
+  const history = await deps.loadHistory(deps.configDir);
   const ecs = await deps.ecsClient(ctx);
   const step: Step = { spinner: deps.spinner, info: deps.info, profile: ctx.profile };
   const { task, container } = await selectEcsContainer(
     ecs,
     want,
-    { connectableOnly: opts.connectable === true, container: opts.container, auto: false },
+    {
+      connectableOnly: opts.connectable === true,
+      container: opts.container,
+      auto: false,
+      recent: recentEcsTargets(history, ctx.profile, ctx.region),
+    },
     step,
     deps,
   );
@@ -335,8 +368,9 @@ export async function runExec(
   deps.info(
     `Opening ${command} in ${container.name} of task ${task.taskId} (${task.service ?? 'no service'}, cluster ${task.cluster}) with profile ${ctx.profile}...`,
   );
+  let exitCode: number;
   try {
-    return await deps.runExecSession(ctx, {
+    exitCode = await deps.runExecSession(ctx, {
       cluster: task.cluster,
       task: task.taskId,
       container: container.name,
@@ -346,4 +380,9 @@ export async function runExec(
   } catch (err) {
     throw describeAwsError(err, { profile: ctx.profile, action: ECS_IAM_ACTIONS.execute });
   }
+
+  // Tasks are replaced on every deployment; the service is what the next exec comes back to.
+  const entry = { profile: ctx.profile, region: ctx.region, cluster: task.cluster, service: task.service };
+  await deps.saveHistory(deps.configDir, recordExec(history, entry, deps.now()));
+  return exitCode;
 }

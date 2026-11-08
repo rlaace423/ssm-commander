@@ -3,7 +3,7 @@ import { filterConnectable, listInstances } from '../aws/instances.js';
 import { resolveContext } from '../context.js';
 import { CliError, describeAwsError, IAM_ACTIONS } from '../errors.js';
 import { defaultRunSessionDeps, runSession } from '../session/run-session.js';
-import { type HistoryFile, loadHistory, recentInstanceIds } from '../storage/history.js';
+import { type HistoryFile, loadHistory, recentEcsTargets, recentInstanceIds } from '../storage/history.js';
 import { configDir } from '../storage/paths.js';
 import {
   type EcsPreset,
@@ -193,6 +193,7 @@ async function ecsHop(
   else if (preset !== undefined) want = { cluster: preset.cluster, service: preset.service ?? STANDALONE_SERVICE };
 
   const ecs = await deps.ecs.ecsClient(ctx);
+  const recent = recentEcsTargets(await deps.loadHistory(deps.configDir), ctx.profile, ctx.region);
   const { task, container } = await selectEcsContainer(
     ecs,
     want,
@@ -200,6 +201,7 @@ async function ecsHop(
       connectableOnly: opts.connectable === true,
       container: opts.container ?? preset?.container ?? undefined,
       auto: preset !== undefined,
+      recent,
     },
     { spinner: deps.spinner, info: deps.info, profile: ctx.profile },
     deps.ecs,

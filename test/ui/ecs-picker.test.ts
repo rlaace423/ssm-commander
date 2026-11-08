@@ -92,6 +92,17 @@ describe('buildClusterChoices', () => {
   });
 });
 
+describe('recent marks', () => {
+  test('buildClusterChoices and buildServiceChoices mark recently used names with *', () => {
+    const clusters = buildClusterChoices([cluster(), cluster({ name: 'staging' })], ['staging']).choices;
+    expect(clusters[0]?.name).toMatch(/^│ prod +│/);
+    expect(clusters[1]?.name).toMatch(/^│ \* staging +│/);
+    const services = buildServiceChoices([service(), service({ name: 'worker' })], ['api']).choices;
+    expect(services[0]?.name).toMatch(/^│ \* api +│/);
+    expect(services[1]?.name).toMatch(/^│ worker +│/);
+  });
+});
+
 describe('buildServiceChoices', () => {
   test('shows running/desired, exec on or off and the row for tasks without a service', () => {
     const { choices } = buildServiceChoices([

@@ -184,6 +184,14 @@ export function tasksOfService(tasks: TaskRow[], service: string): TaskRow[] {
 }
 
 /** Connectable first, then newest first, so the task most likely wanted is at the top. */
+/** Recently used names first, in that order, then the rest as given (names not in `rows` are ignored). */
+export function sortRecentFirst<T extends { name: string }>(rows: T[], recent: string[]): T[] {
+  const first = [...new Set(recent)]
+    .map((name) => rows.find((row) => row.name === name))
+    .filter((row): row is T => row !== undefined);
+  return [...first, ...rows.filter((row) => !first.includes(row))];
+}
+
 export function sortTasks(tasks: TaskRow[]): TaskRow[] {
   const time = (t: TaskRow) => t.startedAt?.getTime() ?? 0;
   return [...tasks].sort(

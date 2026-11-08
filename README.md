@@ -73,7 +73,9 @@ Opens an interactive command (default `/bin/sh`) in a container through ECS Exec
 service, then task; a container is asked for only when the task has several), and a step given on the command
 line or with a single possible choice is skipped. Tasks that cannot be reached are dimmed with the reason: not
 running, `exec disabled` (the task was started without `enableExecuteCommand`), `agent pending`, `no exec
-agent`. Tasks that belong to no service are listed under `(no service)`.
+agent`. Tasks that belong to no service are listed under `(no service)`. Clusters and services you have connected
+to before come first and are marked with `*`, as instances do in `connect`; tasks are not remembered because
+they change with every deployment.
 
 The task side needs what ECS Exec always needs: the service or task started with `enableExecuteCommand`, and a
 task role allowing `ssmmessages:CreateControlChannel`, `ssmmessages:CreateDataChannel`,
@@ -170,7 +172,8 @@ forwarded with `AWS-StartPortForwardingSession`; any other host with `AWS-StartP
 
 ## Files and environment variables
 
-- `~/.ssm-commander/history.json`: recent connections (profile, region, instance id and name).
+- `~/.ssm-commander/history.json`: recent connections: EC2 instances (profile, region, instance id and name) and
+  ECS services (profile, region, cluster and service).
 - `~/.ssm-commander/presets.json`: saved port-forwarding presets.
 - Both are created with mode 0600 and never contain credentials or tokens.
 - `SSM_COMMANDER_HOME`: use another directory for the files above.

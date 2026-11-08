@@ -11,7 +11,7 @@ import {
   validatePort,
 } from '../../src/commands/forward.js';
 import { CliError } from '../../src/errors.js';
-import { emptyHistory, recordConnection } from '../../src/storage/history.js';
+import { emptyHistory, recordConnection, recordExec } from '../../src/storage/history.js';
 import { emptyPresets, type ForwardPreset, type PresetsFile, upsertPreset } from '../../src/storage/presets.js';
 import type { AwsContext, InstanceRow } from '../../src/types.js';
 
@@ -403,6 +403,23 @@ describe('runForward through an ECS task', () => {
     expect(deps.runSession).toHaveBeenCalledWith(
       ctx,
       expect.objectContaining({ Target: expect.stringMatching(/^ecs:prod_/) }),
+    );
+  });
+
+  test('--ecs lists the clusters and services that exec used before first, marked for the picker', async () => {
+    const history = recordExec(
+      emptyHistory(),
+      { profile: 'default', region: 'ap-northeast-2', cluster: 'staging', service: 'api' },
+      new Date(),
+    );
+    const deps = makeDeps({
+      loadHistory: vi.fn(async () => history),
+      ecs: fakeEcs({ fetchClusters: vi.fn(async () => [ecsCluster, { ...ecsCluster, name: 'staging' }]) }),
+    });
+    await runForward(undefined, { ecs: true, ...ports }, deps);
+    expect(deps.ecs.pickCluster).toHaveBeenCalledWith(
+      [expect.objectContaining({ name: 'staging' }), expect.objectContaining({ name: 'prod' })],
+      { recent: ['staging'] },
     );
   });
 

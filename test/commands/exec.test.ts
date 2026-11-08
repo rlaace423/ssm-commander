@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from 'vitest';
 import type { ClusterRow, ContainerInfo, ServiceSummary, TaskRow } from '../../src/aws/ecs.js';
 import { type ExecDeps, runExec } from '../../src/commands/exec.js';
 import { AccessDeniedError, CliError } from '../../src/errors.js';
+import { emptyHistory, recordExec } from '../../src/storage/history.js';
 import type { AwsContext } from '../../src/types.js';
 
 const A = 'a'.repeat(32);
@@ -86,6 +87,10 @@ function makeDeps(world: World, over: Partial<ExecDeps> = {}) {
     requireTty: vi.fn(),
     info: vi.fn(),
     spinner: vi.fn(() => ({ stop: vi.fn(), fail: vi.fn() })),
+    loadHistory: vi.fn(async () => emptyHistory()),
+    saveHistory: vi.fn(async () => {}),
+    configDir: '/tmp/ssm-commander-test',
+    now: () => new Date('2026-11-08T00:00:00Z'),
     ...over,
   };
   return { deps, ecs };
@@ -107,10 +112,11 @@ describe('runExec interactive path', () => {
   test('asks for cluster, service, task and container when each has several choices', async () => {
     const { deps } = makeDeps(twoOfEverything);
     expect(await runExec(undefined, {}, deps)).toBe(0);
-    expect(deps.pickCluster).toHaveBeenCalledWith(twoOfEverything.clusters);
+    expect(deps.pickCluster).toHaveBeenCalledWith(twoOfEverything.clusters, { recent: [] });
     expect(deps.pickService).toHaveBeenCalledWith(
       expect.arrayContaining([expect.objectContaining({ name: 'api' }), expect.objectContaining({ name: 'worker' })]),
       'prod',
+      { recent: [] },
     );
     expect(deps.pickTask).toHaveBeenCalledWith(
       [expect.objectContaining({ taskId: A }), expect.objectContaining({ taskId: B })],
@@ -166,10 +172,10 @@ describe('runExec interactive path', () => {
     };
     const { deps } = makeDeps(world);
     await runExec(undefined, { connectable: true }, deps);
-    expect(deps.pickCluster).toHaveBeenCalledWith([
-      expect.objectContaining({ name: 'prod' }),
-      expect.objectContaining({ name: 'staging' }),
-    ]);
+    expect(deps.pickCluster).toHaveBeenCalledWith(
+      [expect.objectContaining({ name: 'prod' }), expect.objectContaining({ name: 'staging' })],
+      { recent: [] },
+    );
     expect(deps.pickTask).not.toHaveBeenCalled(); // only one task left after filtering
     expect(deps.runExecSession).toHaveBeenCalledWith(ctx, expect.objectContaining({ task: A }));
   });
@@ -182,6 +188,80 @@ describe('runExec interactive path', () => {
       ctx,
       expect.objectContaining({ container: 'sidecar', command: 'bash', runtimeId: 'sidecar-rt' }),
     );
+  });
+});
+
+describe('runExec and the connection history', () => {
+  const D = 'd'.repeat(32);
+  const E = 'e'.repeat(32);
+  const recentWorld: World = {
+    clusters: [cluster('prod'), cluster('staging')],
+    services: { prod: [service('api'), service('worker')], staging: [service('api'), service('worker')] },
+    tasks: {
+      prod: [task(A), task(B, { service: 'worker' })],
+      staging: [task(D, { cluster: 'staging' }), task(E, { cluster: 'staging', service: 'worker' })],
+    },
+  };
+  const used = { profile: 'prod', region: 'ap-northeast-2', cluster: 'staging', service: 'worker' };
+  const history = recordExec(
+    recordExec(emptyHistory(), { ...used, profile: 'other', cluster: 'prod' }, new Date('2026-11-02T00:00:00Z')),
+    used,
+    new Date('2026-11-01T00:00:00Z'),
+  );
+
+  test('lists the recently used cluster and service of this profile first and tells the pickers which they are', async () => {
+    const { deps } = makeDeps(recentWorld, { loadHistory: vi.fn(async () => history) });
+    await runExec(undefined, {}, deps);
+    expect(deps.pickCluster).toHaveBeenCalledWith(
+      [expect.objectContaining({ name: 'staging' }), expect.objectContaining({ name: 'prod' })],
+      { recent: ['staging'] },
+    );
+    expect(deps.pickService).toHaveBeenCalledWith(
+      [expect.objectContaining({ name: 'worker' }), expect.objectContaining({ name: 'api' })],
+      'staging',
+      { recent: ['worker'] },
+    );
+  });
+
+  test('records the cluster and service after the session ends, as connect records the instance', async () => {
+    const { deps } = makeDeps(twoOfEverything);
+    await runExec('prod/api', {}, deps);
+    expect(deps.saveHistory).toHaveBeenCalledWith('/tmp/ssm-commander-test', {
+      version: 1,
+      entries: [
+        {
+          kind: 'ecs',
+          profile: 'prod',
+          region: 'ap-northeast-2',
+          cluster: 'prod',
+          service: 'api',
+          lastConnectedAt: '2026-11-08T00:00:00.000Z',
+          count: 1,
+        },
+      ],
+    });
+  });
+
+  test('a task outside a service is recorded with service null; a session that fails to start is not recorded', async () => {
+    const standalone: World = {
+      clusters: [cluster('prod')],
+      services: {},
+      tasks: { prod: [task(A, { service: null })] },
+    };
+    const { deps } = makeDeps(standalone);
+    await runExec(undefined, { cluster: 'prod', task: A }, deps);
+    expect(deps.saveHistory).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ entries: [expect.objectContaining({ cluster: 'prod', service: null })] }),
+    );
+
+    const failing = makeDeps(twoOfEverything, {
+      runExecSession: vi.fn(async () => {
+        throw new Error('boom');
+      }),
+    });
+    await expect(runExec('prod/api', {}, failing.deps)).rejects.toThrow('boom');
+    expect(failing.deps.saveHistory).not.toHaveBeenCalled();
   });
 });
 

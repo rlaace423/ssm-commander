@@ -23,7 +23,7 @@ import type { ExecDeps } from '../src/commands/exec.js';
 import { FORWARD_DOCUMENT, type ForwardDeps } from '../src/commands/forward.js';
 import type { SshDeps } from '../src/commands/ssh.js';
 import { spawnInherited } from '../src/session/spawn-inherited.js';
-import { emptyHistory, recordConnection } from '../src/storage/history.js';
+import { emptyHistory, recordConnection, recordExec } from '../src/storage/history.js';
 import { loadPresets, savePresets } from '../src/storage/presets.js';
 import type { AwsContext, StartSessionInput } from '../src/types.js';
 import { descriptionInput } from '../src/ui/description-input.js';
@@ -201,11 +201,15 @@ async function listInstances(_ctx: AwsContext, opts: { recentIds: string[] }) {
   return { rows: sortInstances(mergeInstances(FLEET, AGENTS), opts.recentIds), ssmUnavailable: false };
 }
 
-// api-1 was connected before, so it shows up first with the recent marker.
+// api-1 and the prod/api service were used before, so they show up first with the recent marker.
 const loadHistory = async () =>
-  recordConnection(
-    emptyHistory(),
-    { profile: chosenProfile, region: REGION, instanceId: 'i-0f3a9c1d2e4b5a601', instanceName: 'api-1' },
+  recordExec(
+    recordConnection(
+      emptyHistory(),
+      { profile: chosenProfile, region: REGION, instanceId: 'i-0f3a9c1d2e4b5a601', instanceName: 'api-1' },
+      new Date(),
+    ),
+    { profile: chosenProfile, region: REGION, cluster: 'prod', service: 'api' },
     new Date(),
   );
 
@@ -255,6 +259,10 @@ const exec: ExecDeps = {
   requireTty: () => requireTty(),
   info,
   spinner,
+  loadHistory,
+  saveHistory: async () => {},
+  configDir: DEMO_HOME,
+  now: () => new Date(),
 };
 
 const forward: ForwardDeps = {

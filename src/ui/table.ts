@@ -20,6 +20,13 @@ export const TABLE_STYLE = {
 
 const CELL_PADDING = 1;
 
+/** Prefix of the first cell of rows the history knows (recent connections). */
+export const RECENT_MARK = '*';
+
+export function markRecent(text: string, recent: boolean): string {
+  return recent ? `${RECENT_MARK} ${text}` : text;
+}
+
 type Border = { left: string; mid: string; right: string; fill: string };
 
 function cellText(text: string, width: number): string {

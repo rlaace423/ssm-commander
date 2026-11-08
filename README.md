@@ -42,6 +42,13 @@ or run it without installing:
 npx ssm-commander
 ```
 
+With Homebrew, which installs Node for you (the Session Manager plugin is still a separate
+`brew install --cask session-manager-plugin`):
+
+```bash
+brew install rlaace423/tap/ssm-commander
+```
+
 From a checkout (to try a branch, or until the package is on npm):
 
 ```bash

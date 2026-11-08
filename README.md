@@ -179,8 +179,7 @@ npm run lint && npm run typecheck && npm run build
 
 [CHANGELOG.md](CHANGELOG.md) records what changed between versions.
 [docs/manual-verification.md](docs/manual-verification.md) is the release checklist against real instances and
-services; `test-infra/` creates and deletes them with CloudFormation. The working documents of the rewrite live
-under `docs/superpowers/`.
+services; `test-infra/` creates and deletes them with CloudFormation.
 
 ## License
 

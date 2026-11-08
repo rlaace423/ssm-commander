@@ -10,5 +10,6 @@ coverage/
 .env
 .env.*
 
-# superpowers plan workspace (scratch)
+# superpowers plan workspace and working documents (not published)
 .superpowers/
+docs/superpowers/

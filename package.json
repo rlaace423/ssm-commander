@@ -1,6 +1,6 @@
 {
   "name": "ssm-commander",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Connect to EC2 instances and ECS containers by name through Session Manager and ECS Exec: interactive shell, port forwarding, ssh and scp across AWS profiles, without the AWS CLI.",
   "license": "MIT",
   "repository": {

@@ -139,9 +139,9 @@ const SETTINGS_NEED: TtyNeed = {
   hint: 'Pass --remote-host, --remote-port and --local-port',
 };
 
-/** Quoted for the shell unless it is made of the characters names, ids and hosts are made of. */
-function shellWord(value: string): string {
-  return /^[\w.:/@-]+$/.test(value) ? value : `'${value.replace(/'/g, "'\\''")}'`;
+/** Quoted for the shell unless it is made of the characters names, ids, hosts and options are made of. */
+export function shellWord(value: string): string {
+  return /^[\w.:/@-][\w.:/@=-]*$/.test(value) ? value : `'${value.replace(/'/g, "'\\''")}'`;
 }
 
 /** The command line that repeats an interactive run without its prompts. */

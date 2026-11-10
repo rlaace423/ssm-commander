@@ -60,5 +60,22 @@ check(
   conflict,
 );
 
+const mistyped = run(['exsec']);
+check(
+  'a mistyped command is refused at once with the closest one',
+  mistyped.code === 1 &&
+    mistyped.err.includes('Unknown command "exsec"') &&
+    mistyped.err.includes('ssm-commander exec'),
+  mistyped,
+);
+
+// The profile does not exist, so the credentials check fails on this machine without reaching AWS.
+const before = run(['-p', 'no-such-profile-for-the-smoke-test', 'doctor']);
+check(
+  '-p before the command reaches the command',
+  before.code === 1 && before.out.includes('no-such-profile-for-the-smoke-test'),
+  before,
+);
+
 rmSync(home, { recursive: true, force: true });
 process.exit(failed === 0 ? 0 : 1);

@@ -68,8 +68,9 @@ ssm-commander connect i-0123456789abcdef0 -p prod -r ap-northeast-2
 ssm-commander connect --connectable        # only instances that can be connected right now
 ```
 
-`connect` is the default command. The table lists the instances of the region with their state and SSM status;
-type to search by name, id or IP address. Instances you connected to before come first, marked `*`.
+Without a command, `connect` runs and takes options only (`ssm-commander -p prod`); a target always follows its
+command. The table lists the instances of the region with their state and SSM status; type to search by name, id
+or IP address. Instances you connected to before come first, marked `*`.
 
 ### exec
 
@@ -118,8 +119,9 @@ ssm-commander scp --profile prod -r ubuntu@web-1:/var/log/app ./logs
 The system `ssh` and `scp` run with a `ProxyCommand` through Session Manager, so keys, `-o` options, port forwards
 and remote commands work as usual. Write ssm-commander's options (`--profile`, `--region`, `--user`) before the
 target and ssh's own after it. The login name defaults to `ubuntu` on Ubuntu, `admin` on Debian and `ec2-user`
-otherwise; `user@name` or `--user` overrides it. `-p` and `-r` belong to ssh and scp themselves, so `--profile`
-and `--region` are written in full here.
+otherwise; `user@name` or `--user` overrides it. After `ssh` and `scp`, `-p` and `-r` belong to ssh and scp
+themselves, so `--profile` and `--region` are written in full there; in front of the command they are the profile
+and the region as everywhere (`ssm-commander -p prod ssh web-1`).
 
 ### doctor
 
@@ -135,6 +137,8 @@ a container needs for ECS Exec. Exit code 1 when something fails.
 
 - Profile: `-p/--profile`, then `AWS_PROFILE`, then a prompt (skipped when only one profile exists).
 - Region: `-r/--region`, then `AWS_REGION` or `AWS_DEFAULT_REGION`, then the profile's `region`, then a prompt.
+- `-p` and `-r` go before the command or after it: `ssm-commander -p prod exec` is `ssm-commander exec -p prod`.
+  Every other option follows its command.
 - MFA codes are prompted for by `connect`, `exec`, `forward` and `doctor`; `ssh` and `scp` cannot prompt, so use
   them with profiles that need no code. SSO profiles work while their token is valid; run `aws sso login` yourself.
 

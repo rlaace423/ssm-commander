@@ -1,4 +1,4 @@
-/** The public commands, for "did you mean" suggestions when a word reaches connect as its default target. */
+/** The public commands, for "did you mean" suggestions when the first word of a command line is not a command. */
 export const COMMAND_NAMES: readonly string[] = ['connect', 'exec', 'forward', 'ssh', 'scp', 'doctor'];
 
 /** Optimal string alignment distance: an insertion, deletion, substitution or swap of adjacent characters is one edit. */
@@ -23,8 +23,8 @@ const MIN_WORD_LENGTH = 3;
 
 /**
  * The command a mistyped word most likely meant: one edit away for short words, two for longer ones. Null when
- * nothing is close, when the word is too short to tell, or when it is a command name as written (commander would
- * have dispatched it, so it is a genuine target).
+ * nothing is close, when the word is too short to tell, or when it is a command name as written (there is nothing
+ * to correct).
  */
 export function suggestCommand(word: string, commands: readonly string[] = COMMAND_NAMES): string | null {
   if (word.length < MIN_WORD_LENGTH || commands.includes(word)) return null;

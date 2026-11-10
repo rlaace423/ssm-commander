@@ -229,28 +229,22 @@ describe('runConnect', () => {
   });
 });
 
-describe('runConnect as the default command', () => {
-  test('a target that matches no instance but looks like a mistyped command names the command', async () => {
-    const deps = makeDeps();
-    const err = await runConnect('conect', { defaultCommand: true }, deps).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(CliError);
-    expect((err as CliError).message).toBe('Unknown command "conect"');
-    expect((err as CliError).hint).toContain('ssm-commander connect');
-    expect(deps.pickInstance).not.toHaveBeenCalled();
-    expect(deps.runSession).not.toHaveBeenCalled();
-  });
-
-  test('an instance that happens to be named like a command is still connected to', async () => {
+describe('runConnect with a target that reads like a command', () => {
+  // The command line decides what is a command (see cli.test.ts); by the time connect runs, a target is a target.
+  test('an instance that happens to be named like a command is connected to', async () => {
     const deps = makeDeps({
       listInstances: vi.fn(async () => ({ rows: [row({ instanceId: 'i-7', name: 'exec' })], ssmUnavailable: false })),
     });
-    await runConnect('exec', { defaultCommand: true }, deps);
+    await runConnect('exec', {}, deps);
     expect(deps.runSession).toHaveBeenCalledWith(ctx, { Target: 'i-7' });
   });
 
-  test('with "connect" written out, a missing instance is a missing instance, not a typo', async () => {
+  test('a missing instance that resembles a command is a missing instance: the list is offered', async () => {
     const deps = makeDeps();
-    await runConnect('conect', { defaultCommand: false }, deps);
+    await runConnect('conect', {}, deps);
+    expect(deps.info).toHaveBeenCalledWith(
+      'No instance named "conect" in ap-northeast-2 (profile default); choose from the list',
+    );
     expect(deps.pickInstance).toHaveBeenCalled();
   });
 });

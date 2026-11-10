@@ -15,8 +15,17 @@ connection lost) are dimmed with the reason and cannot be selected; naming one e
 A target on the command line is an instance id or a Name tag. The name is matched ignoring case, and when several
 instances share it the list opens with just those. An id that is not in the region fails at once, naming the region
 and the profile. In a narrow terminal the table drops the Public IP, Type and Private IP columns (in that order) and
-shortens long names; typing still searches the hidden fields. A first word that matches no instance but looks like
-a mistyped command (`ssm-commander conect`) is reported as an unknown command.
+shortens long names; typing still searches the hidden fields.
+
+The first word after `ssm-commander` is always a command. Without one, `connect` runs and takes options only
+(`ssm-commander`, `ssm-commander -p prod`); a target goes after its command, because a bare name could be an
+instance or an ECS service. Any other first word is reported as an unknown command at once, before a profile is
+asked for: with the closest command when it looks mistyped (`ssm-commander conect`), otherwise with the `connect`
+and `exec` forms to write instead.
+
+`-p`, `-r` and `--debug` may be written before the command as well as after it (`ssm-commander -p prod exec`); when
+both places give a profile or a region, the one after the command is used. Every other option follows its command:
+a line with one in front (`ssm-commander --connectable exec`) is answered with the line to write.
 
 ## exec
 
@@ -70,8 +79,9 @@ and `ec2-user` otherwise (also when the platform is unknown); `--user` overrides
 When ssh fails with its own exit code 255 and the name was a default, a hint says which name was tried. For `scp`,
 exactly one side of the transfer is `[user@]instance:path`, where `instance` is a Name tag or instance id. Put
 scp's own flags (`-r`, `-o ...`) before the two paths, as `scp` itself requires; after the paths scp would read them
-as file names. Both commands take `--profile` and `--region` written in full: `-p` and `-r` belong to ssh and scp
-themselves, and a `-p <profile>` is caught with a hint wherever it lands.
+as file names. After the command name both take `--profile` and `--region` written in full: `-p` and `-r` belong to
+ssh and scp themselves there, and a `-p <profile>` is caught with a hint wherever it lands. In front of the command
+`-p` and `-r` are the profile and the region, as for every command (`ssm-commander -p prod ssh web-1`).
 
 Under the hood both commands run the system `ssh`/`scp` with a `ProxyCommand` that calls a hidden
 `ssm-commander proxy` subcommand, which opens an `AWS-StartSSHSession` through Session Manager. Host keys are

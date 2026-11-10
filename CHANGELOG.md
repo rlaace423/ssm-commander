@@ -2,6 +2,33 @@
 
 Notable changes to ssm-commander. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 2.0.0 - 2026-11-11
+
+The first word after `ssm-commander` is now always a command. One way of writing `connect` stops working, hence the
+new major version; every command line shown in the README works as before.
+
+### Added
+
+- `-p`/`--profile` and `-r`/`--region` before the command: `ssm-commander -p prod exec` is `ssm-commander exec -p
+  prod`. There they used to be options of `connect`, so the command after them was looked up as an instance
+  (`ssm-commander -p prod exec`) or refused as an argument too many (`ssm-commander -p prod connect web-1`).
+
+### Removed
+
+- A target without its command. `ssm-commander web-1` used to mean `ssm-commander connect web-1`; now it fails at
+  once with `Unknown command "web-1"` and a hint showing the `connect` and `exec` forms. With ECS in the tool a bare
+  name could be an instance or a service, and only instances were searched. Without a command `connect` still runs,
+  taking options only (`ssm-commander`, `ssm-commander -p prod`).
+
+### Fixed
+
+- A mistyped command (`ssm-commander exsec`) is reported at once with the closest command. It used to be taken for
+  an instance name first: the profile (and, where needed, the region and an MFA code) was asked for and the
+  instances were listed before the error appeared, and with arguments after it the error was about `connect`
+  (`too many arguments for 'connect'`, `unknown option '--list'`).
+- A command written after an option of its own (`ssm-commander --connectable exec`) is told to come first, with the
+  line to write, instead of being looked up as an instance named `exec`.
+
 ## 1.0.0 - 2026-11-08
 
 A rewrite. 0.1 wrapped the AWS CLI: it stored `aws ssm` command lines and replayed them. 1.0.0 calls AWS through

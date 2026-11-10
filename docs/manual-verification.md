@@ -42,7 +42,12 @@ linked role", ECS was still creating its service-linked role; run `up` again.
 - [ ] `ssm-commander connect i-0123456789abcdef0 -p <profile>` fails at once with `was not found in <region>
   (profile <profile>)` and does not open the list; `ssm-commander connect no-such-name -p <profile> < /dev/null`
   prints one line naming the region and profile.
-- [ ] `ssm-commander conect -p <profile>` prints `Unknown command "conect"` with the `Did you mean` hint.
+- [ ] `ssm-commander conect` prints `Unknown command "conect"` with the `Did you mean` hint at once, without asking
+  for a profile; `ssm-commander <name>` prints `Unknown command "<name>"` with a hint showing `connect <name>` and
+  `exec <name>`; `ssm-commander -p <profile>` still opens the instance list.
+- [ ] `ssm-commander -p <profile> exec` opens the same cluster list as `ssm-commander exec -p <profile>`, and
+  `ssm-commander -p <profile> connect <name>` connects; `ssm-commander --connectable exec` says that `exec` must
+  come before `--connectable` and shows the line to write.
 - [ ] In a 70-column terminal, `ssm-commander connect -p <profile>` shows the table without wrapped lines (the Public
   IP, Type and Private IP columns are gone and long names end in `…`), with `(type to search, ↑↓ to move, Enter to
   select)` under it.

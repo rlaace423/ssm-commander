@@ -12,6 +12,19 @@ new major version; every command line shown in the README works as before.
 - `-p`/`--profile` and `-r`/`--region` before the command: `ssm-commander -p prod exec` is `ssm-commander exec -p
   prod`. There they used to be options of `connect`, so the command after them was looked up as an instance
   (`ssm-commander -p prod exec`) or refused as an argument too many (`ssm-commander -p prod connect web-1`).
+- `forward --ecs cluster/service[/task-id]`: `--ecs` takes the task to go through, as `--target ecs:...` does, and
+  still picks from lists without a value. `ssm-commander forward --ecs prod/api` used to look for a preset named
+  `prod/api`.
+- The `ecs:` prefix of `forward --target` is accepted by `exec` and `doctor --ecs` as well (`ssm-commander exec
+  ecs:prod/api`), so an ECS target is written the same way in every command.
+
+### Changed
+
+- `ssm-commander --help` lists `ssh` and `scp` with one line each; their notes on argument order are in
+  `ssm-commander ssh --help` and `ssm-commander scp --help`.
+- Hints say more: an unknown preset name in `forward` shows how an instance or a service of that name is written
+  (`--target`, `--ecs`), `-p` after `ssh` is answered with `-p` before `ssh` as well as `--profile`, and a
+  mistyped command also shows the `connect` form in case the word was a target.
 
 ### Removed
 

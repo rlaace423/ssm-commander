@@ -102,6 +102,23 @@ describe('createProgram', () => {
     expect(forward?.options.map((o) => o.long)).toEqual(expect.arrayContaining(['--ecs', '--container']));
   });
 
+  test('forward takes --ecs with or without a target', () => {
+    const forward = createProgram().commands.find((c) => c.name() === 'forward');
+    const ecs = forward?.options.find((o) => o.long === '--ecs');
+    expect(ecs?.optional).toBe(true);
+    expect(ecs?.required).toBe(false);
+  });
+
+  test('the command list has one line per command; the ordering notes of ssh and scp stay in their own help', () => {
+    const program = createProgram();
+    expect(program.helpInformation()).not.toContain('Requires an SSH server');
+    for (const name of ['ssh', 'scp']) {
+      const cmd = program.commands.find((c) => c.name() === name);
+      expect(cmd?.summary(), name).toMatch(/through Session Manager$/);
+      expect(cmd?.helpInformation(), name).toContain('Requires an SSH server');
+    }
+  });
+
   test('registers forward with preset management options', () => {
     const forward = createProgram().commands.find((c) => c.name() === 'forward');
     expect(forward?.options.map((o) => o.long)).toEqual(
@@ -406,6 +423,12 @@ describe('-p and -r before the command', () => {
 
     const twice = await run('-p', 'before', 'connect', '-p', 'after', 'web');
     expect(twice.deps.connect.resolveContext).toHaveBeenCalledWith({ profile: 'after', region: undefined });
+  });
+
+  test('forward --ecs takes the service that follows it, not a preset of that name', async () => {
+    const { stderr, deps } = await run('forward', '--ecs', 'prod/api');
+    expect(stderr).not.toContain('Preset');
+    expect(deps.forward.resolveContext).toHaveBeenCalled();
   });
 
   test("after ssh, -p is still ssh's own port option", async () => {

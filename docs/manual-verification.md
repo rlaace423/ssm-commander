@@ -55,6 +55,10 @@ linked role", ECS was still creating its service-linked role; run `up` again.
   naming the region, and a stack trace (`--debug` after the command name works).
 - [ ] `SSM_COMMANDER_PLUGIN_PATH=/nope ssm-commander doctor` prints ✘ for the plugin with that path, and `connect`
   with the same variable fails before any session is opened.
+- [ ] `ssm-commander --help` lists every command, `ssh` and `scp` with one line each; `ssm-commander ssh --help`
+  has the notes on argument order.
+- [ ] `ssm-commander forward <name>` (an instance name, no preset of that name) prints `Preset "<name>" was not
+  found` with a hint showing `--target <name>` and `--ecs <name>`.
 - [ ] `ssm-commander forward --list --delete x` and `ssm-commander forward --ecs --target <name> --remote-host localhost --remote-port 22 --local-port 2222`
   fail with `cannot be combined`; `--local-port abc` names the option in its error.
 - [ ] `ssm-commander forward -p <profile> --target <name> --remote-host localhost --remote-port 22 --local-port 2222 --save t`
@@ -91,6 +95,9 @@ linked role", ECS was still creating its service-linked role; run `up` again.
 - [ ] `ssm-commander forward -p <profile> --target ecs:<cluster>/<service> --remote-host localhost --remote-port <container-port> --local-port 18080 --save t2`
   opens the tunnel; `curl localhost:18080` answers from the container; Ctrl+C stops it; `ssm-commander forward t2`
   runs again without prompts and names the task it went through.
+- [ ] `ssm-commander forward -p <profile> --ecs <cluster>/<service>` goes through the same task as `--target
+  ecs:<cluster>/<service>` without listing clusters, and `ssm-commander exec -p <profile> ecs:<cluster>/<service>`
+  opens the same shell as without the prefix.
 - [ ] After every session no `session-manager-plugin` process is left behind (`pgrep session-manager-plugin`).
 - [ ] `ssm-commander doctor -p <profile> --ecs <cluster>/<service>` prints ✔ for the service, task, exec agent and
   task role of a working service, and ✘ with the `update-service` hint for a service without execute command.

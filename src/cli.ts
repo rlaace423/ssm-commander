@@ -158,7 +158,10 @@ export function createProgram(deps: ProgramDeps = {}): Command {
     .option('-p, --profile <profile>', 'AWS profile (defaults to AWS_PROFILE, then a prompt)')
     .option('-r, --region <region>', 'AWS region (defaults to the profile region, then a prompt)')
     .option('--target <target>', 'instance id or Name tag, or ecs:cluster/service[/task-id]; omit to pick from a list')
-    .option('--ecs', 'go through an ECS task instead of an instance (pick cluster, service and task from lists)')
+    .option(
+      '--ecs [target]',
+      'go through an ECS task instead of an instance: cluster/service[/task-id], or no value to pick from lists',
+    )
     .option('--container <name>', 'container of the ECS task to go through (asked when there are several)')
     .option(
       '--remote-host <host>',
@@ -199,6 +202,7 @@ export function createProgram(deps: ProgramDeps = {}): Command {
 
   addSshOptions(
     command('ssh')
+      .summary('Open ssh to an EC2 instance through Session Manager')
       .description(`Open ssh to an EC2 instance through Session Manager. ${sshNote}`)
       .argument('[args...]', 'target (instance id or Name tag) followed by ssh options and a remote command'),
   ).action(async (args: string[], opts: SshOptions) => {
@@ -207,6 +211,7 @@ export function createProgram(deps: ProgramDeps = {}): Command {
 
   addSshOptions(
     command('scp')
+      .summary('Copy files to or from an EC2 instance through Session Manager')
       .description(`Copy files to or from an EC2 instance through Session Manager. ${scpNote}`)
       .argument('[args...]', 'scp arguments; exactly one side is [user@]instance:path'),
   ).action(async (args: string[], opts: SshOptions) => {

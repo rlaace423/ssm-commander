@@ -75,6 +75,13 @@ describe('parseExecTarget', () => {
     expect(parseExecTarget(`prod/api/${TASK_ID}`)).toEqual({ cluster: 'prod', service: 'api', task: TASK_ID });
   });
 
+  test('the ecs: prefix that forward --target needs is accepted and changes nothing', () => {
+    expect(parseExecTarget('ecs:api')).toEqual({ service: 'api' });
+    expect(parseExecTarget('ecs:prod/api')).toEqual({ cluster: 'prod', service: 'api' });
+    expect(parseExecTarget(`ecs:prod/api/${TASK_ID}`)).toEqual({ cluster: 'prod', service: 'api', task: TASK_ID });
+    expect(() => parseExecTarget('ecs:')).toThrow(CliError);
+  });
+
   test('rejects empty segments and more than three segments', () => {
     expect(() => parseExecTarget('prod//api')).toThrow(CliError);
     expect(() => parseExecTarget('a/b/c/d')).toThrow(CliError);

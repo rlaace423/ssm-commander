@@ -224,6 +224,17 @@ describe('runExec and the connection history', () => {
     );
   });
 
+  test('a target written with the ecs: prefix, as forward --target has it, is the same target', async () => {
+    const plain = makeDeps(twoOfEverything);
+    await runExec('prod/api', {}, plain.deps);
+    const prefixed = makeDeps(twoOfEverything);
+    await runExec('ecs:prod/api', {}, prefixed.deps);
+    expect(vi.mocked(prefixed.deps.runExecSession).mock.calls).toEqual(vi.mocked(plain.deps.runExecSession).mock.calls);
+    expect(vi.mocked(prefixed.deps.runExecSession).mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({ cluster: 'prod' }),
+    );
+  });
+
   test('records the cluster and service after the session ends, as connect records the instance', async () => {
     const { deps } = makeDeps(twoOfEverything);
     await runExec('prod/api', {}, deps);

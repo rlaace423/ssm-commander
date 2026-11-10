@@ -93,9 +93,13 @@ export function isTaskId(text: string): boolean {
   return TASK_ID.test(text);
 }
 
-/** `service`, `cluster/service` or `cluster/service/taskId`; a lone 32-hex-character segment is a task id. */
+/**
+ * `service`, `cluster/service` or `cluster/service/taskId`; a lone 32-hex-character segment is a task id. The
+ * `ecs:` prefix that `forward --target` needs to tell a task from an instance is accepted here too, so that an ECS
+ * target reads the same in every command.
+ */
 export function parseExecTarget(text: string): ExecTarget {
-  const parts = text.split('/');
+  const parts = (isEcsTarget(text) ? text.slice(ECS_TARGET_PREFIX.length) : text).split('/');
   if (parts.length > 3 || parts.some((part) => part.length === 0)) {
     throw new CliError(`Invalid target "${text}"`, 'Use service, cluster/service or cluster/service/task-id');
   }

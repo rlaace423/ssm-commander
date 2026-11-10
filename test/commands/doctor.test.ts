@@ -218,6 +218,10 @@ describe('ECS Exec checks (doctor --ecs)', () => {
     expect(checks[3]?.detail).toContain('ssmmessages');
   });
 
+  test('--ecs takes the target with the ecs: prefix too', async () => {
+    expect(await run({}, 'ecs:prod/api')).toEqual(await run());
+  });
+
   test('--ecs needs --profile', async () => {
     await expect(runDoctorChecks({ ecs: 'prod/api' }, makeDeps())).rejects.toBeInstanceOf(CliError);
     await expect(runDoctorChecks({ profile: 'default', ecs: 'api' }, makeDeps())).rejects.toThrow(/cluster\/service/);

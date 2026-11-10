@@ -218,6 +218,26 @@ describe('runForward', () => {
     await expect(runForward('nope', {}, makeDeps())).rejects.toThrow('Preset "nope" was not found');
   });
 
+  test('an unknown preset name says how an instance or a service of that name is written', async () => {
+    const hintFor = async (name: string) => {
+      const err = await runForward(name, {}, makeDeps()).catch((e: unknown) => e);
+      expect((err as CliError).message).toBe(`Preset "${name}" was not found`);
+      return (err as CliError).hint ?? '';
+    };
+    const plain = await hintFor('web-1');
+    expect(plain).toContain('"ssm-commander forward --list"');
+    expect(plain).toContain('--target web-1');
+    expect(plain).toContain('--ecs web-1');
+
+    const id = await hintFor('i-0123456789abcdef0');
+    expect(id).toContain('--target i-0123456789abcdef0');
+    expect(id).not.toContain('--ecs');
+
+    const service = await hintFor('prod/api');
+    expect(service).toContain('--ecs prod/api');
+    expect(service).not.toContain('--target');
+  });
+
   test('without a preset resolves the target, prompts for missing values and starts the session', async () => {
     const deps = makeDeps({
       descriptionInput: vi
@@ -409,6 +429,22 @@ describe('runForward through an ECS task', () => {
     expect(deps.runSession).toHaveBeenCalledWith(ctx, expect.objectContaining({ Target: `ecs:prod_${TASK_A}_app-rt` }));
   });
 
+  test('--ecs cluster/service names the service like --target ecs:cluster/service: no lists, the same session', async () => {
+    const byEcs = makeDeps();
+    expect(await runForward(undefined, { ecs: 'prod/api', ...ports }, byEcs)).toBe(0);
+    expect(byEcs.requireTty).not.toHaveBeenCalled();
+    expect(byEcs.ecs.fetchClusters).not.toHaveBeenCalled();
+    expect(byEcs.ecs.fetchTasks).toHaveBeenCalledWith(expect.anything(), 'prod', 'api');
+
+    const byTarget = makeDeps();
+    await runForward(undefined, { target: 'ecs:prod/api', ...ports }, byTarget);
+    expect(vi.mocked(byEcs.runSession).mock.calls).toEqual(vi.mocked(byTarget.runSession).mock.calls);
+
+    const prefixed = makeDeps();
+    await runForward(undefined, { ecs: 'ecs:prod/api', ...ports }, prefixed);
+    expect(vi.mocked(prefixed.runSession).mock.calls).toEqual(vi.mocked(byTarget.runSession).mock.calls);
+  });
+
   test('--ecs without a target requires a terminal first, then walks cluster, service and task', async () => {
     const blocked = makeDeps({
       requireTty: () => {
@@ -472,8 +508,15 @@ describe('conflicting or malformed options', () => {
     expect(err).toBeInstanceOf(CliError);
     expect((err as CliError).message).toBe('--ecs and --target cannot be combined');
     expect((err as CliError).hint).toContain('--target ecs:cluster/service');
+    expect((err as CliError).hint).toContain('--ecs cluster/service');
     expect(deps.listInstances).not.toHaveBeenCalled();
     expect(deps.ecs.fetchClusters).not.toHaveBeenCalled();
+
+    const named = makeDeps();
+    await expect(runForward(undefined, { ecs: 'prod/api', target: 'web', ...ports }, named)).rejects.toThrow(
+      '--ecs and --target cannot be combined',
+    );
+    expect(named.ecs.fetchTasks).not.toHaveBeenCalled();
   });
 
   test('a port option that is not a port names the option and the value', async () => {
@@ -495,6 +538,12 @@ describe('conflicting or malformed options', () => {
     expect(picker.requireTty).toHaveBeenCalledWith(
       expect.objectContaining({ hint: expect.stringContaining('--target') }),
     );
+    const ecsPicker = makeDeps();
+    await runForward(undefined, { ecs: true, ...ports }, ecsPicker);
+    expect(ecsPicker.requireTty).toHaveBeenCalledWith({
+      what: 'Picking an ECS task',
+      hint: expect.stringContaining('--ecs cluster/service'),
+    });
   });
 });
 

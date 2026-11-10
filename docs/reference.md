@@ -38,6 +38,11 @@ agent`. Tasks that belong to no service are listed under `(no service)`. Cluster
 to before come first and are marked with `*`, as instances do in `connect`; tasks are not remembered because
 they change with every deployment.
 
+A target on the command line is `service`, `cluster/service` or `cluster/service/task-id`; a service alone is
+searched in every cluster. The `ecs:` prefix that `forward --target` needs is accepted wherever a target is ECS
+(`exec ecs:prod/api`, `forward --ecs ecs:prod/api`, `doctor --ecs ecs:prod/api`), so a target copied from one
+command works in another.
+
 The task side needs what ECS Exec always needs: the service or task started with `enableExecuteCommand`, and a
 task role allowing `ssmmessages:CreateControlChannel`, `ssmmessages:CreateDataChannel`,
 `ssmmessages:OpenControlChannel` and `ssmmessages:OpenDataChannel`. For port forwarding through a task see
@@ -52,18 +57,22 @@ ssm-commander forward                      # pick the instance and answer the pr
 ssm-commander forward --list
 ssm-commander forward --delete prod-db
 ssm-commander forward --target ecs:prod/api --remote-host localhost --remote-port 8080 --local-port 18080 --save api-local
+ssm-commander forward --ecs prod/api       # the same task as --target ecs:prod/api; the prompts ask for the rest
 ssm-commander forward --ecs                # pick cluster, service and task from lists, then answer the prompts
 ```
 
-`--remote-host localhost` forwards a port of the instance itself. Values you do not pass are prompted for, and
-after such a run the equivalent command line is printed so that the next one needs no prompts. With
-a preset name, options given alongside override the saved values for that run. `--list` and `--delete` cannot be
-combined, nor can `--ecs` and `--target` (write the task as `--target ecs:...` instead).
+The word after `forward` is the name of a preset, never a target: what to go through is named with `--target` or
+`--ecs`, and a name that is no preset is answered with both ways of writing it. `--remote-host localhost` forwards
+a port of the instance itself. Values you do not pass are prompted for, and after such a run the equivalent command
+line is printed so that the next one needs no prompts. With a preset name, options given alongside override the
+saved values for that run. `--list` and `--delete` cannot be combined, nor can `--ecs` and `--target` (name the
+task once).
 Press Ctrl+C to stop forwarding. If the local port is already taken (an earlier forward still running in another
 terminal, for example), the command stops with `Local port <n> is already in use` before opening a session.
 
-The tunnel can also go through an ECS task: `--target ecs:cluster/service` (or `ecs:cluster/service/task-id`,
-or `--ecs` to pick from lists) uses the same selection as `exec`, so the task needs ECS Exec enabled. `localhost`
+The tunnel can also go through an ECS task: `--target ecs:cluster/service` or, shorter, `--ecs cluster/service`
+(either with `/task-id` for one task; `--ecs` alone picks from lists) uses the same selection as `exec`, so the
+task needs ECS Exec enabled. `localhost`
 then means the task itself, so `--remote-port 8080` reaches the container's port 8080, and another host is
 reached from the task's network (a Fargate task as a bastion for RDS, for example). A preset saved this way
 remembers the cluster and service and goes through the newest reachable task each time it runs.

@@ -101,9 +101,11 @@ ssm-commander forward --list               # saved presets; --delete <name> remo
 
 ![Demo: save a port-forwarding preset, then reuse it by name](demo/forward.gif)
 
-`--remote-host localhost` forwards a port of the instance or task itself; any other host is reached from its
-network, so a Fargate task or a small instance works as a bastion for RDS. After a run that asked questions, the
-equivalent command line is printed so that the next run needs no prompts. Ctrl+C stops the tunnel.
+The word after `forward` is a preset. What to go through is named with an option: `--target` for an instance, and
+for an ECS task `--target ecs:prod/api` or `--ecs prod/api` (`--ecs` alone picks from lists). `--remote-host
+localhost` forwards a port of the instance or task itself; any other host is reached from its network, so a Fargate
+task or a small instance works as a bastion for RDS. After a run that asked questions, the equivalent command line
+is printed so that the next run needs no prompts. Ctrl+C stops the tunnel.
 
 ### ssh and scp
 
@@ -151,7 +153,7 @@ sessions are set up.
 | --- | --- |
 | `connect`, `forward` through an instance, `ssh`, `scp` | `ec2:DescribeInstances`, `ssm:DescribeInstanceInformation`, `ssm:StartSession`, `ssm:TerminateSession` |
 | `exec` | `ecs:ListClusters`, `ecs:DescribeClusters`, `ecs:ListServices`, `ecs:DescribeServices`, `ecs:ListTasks`, `ecs:DescribeTasks`, `ecs:ExecuteCommand`; with `--cluster` and `--task`, only the last two |
-| `forward --target ecs:...` | the `ecs:` listing actions of `exec` plus `ssm:StartSession` and `ssm:TerminateSession`; no `ecs:ExecuteCommand` |
+| `forward` through an ECS task | the `ecs:` listing actions of `exec` plus `ssm:StartSession` and `ssm:TerminateSession`; no `ecs:ExecuteCommand` |
 | `doctor --profile` | `sts:GetCallerIdentity` |
 | `doctor --ecs` | `ecs:ListServices`, `ecs:DescribeServices`, `ecs:ListTasks`, `ecs:DescribeTasks`, `ecs:DescribeTaskDefinition`, `iam:SimulatePrincipalPolicy` |
 | the region picker (a profile without a region) | `ec2:DescribeRegions` |

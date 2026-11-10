@@ -176,7 +176,7 @@ export function assertSshTargetFirst(first: string): void {
   const own = first === '-p' ? '--profile' : first === '-r' ? '--region' : null;
   if (own !== null) {
     throw new CliError(
-      `${first} after "ssh" would be ssh's own option; ssm-commander ssh takes ${own} (written in full) before the target`,
+      `${first} after "ssh" would be ssh's own option: write ${own} in full there, or ${first} before "ssh"`,
       SSH_USAGE,
     );
   }
@@ -189,7 +189,7 @@ export function assertSshPortIsNumber(options: string[]): void {
     const value = options[i + 1] as string;
     if (options[i] === '-p' && !/^\d+$/.test(value)) {
       throw new CliError(
-        `-p ${value} is not a port for ssh; to choose the AWS profile write --profile ${value} before the target`,
+        `-p ${value} is not a port for ssh; to choose the AWS profile write --profile ${value} before the target, or -p ${value} before "ssh"`,
         SSH_USAGE,
       );
     }

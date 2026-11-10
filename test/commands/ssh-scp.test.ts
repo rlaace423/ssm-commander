@@ -244,6 +244,7 @@ describe('ssh short flags that belong to ssh', () => {
     const err = await runSsh(['-p', 'default', 'web', 'hostname'], {}, deps).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(CliError);
     expect((err as CliError).message).toContain('--profile');
+    expect((err as CliError).message).toContain('-p before "ssh"');
     expect((err as CliError).hint).toContain('ssm-commander ssh');
     const region = await runSsh(['-r', 'us-east-1', 'web'], {}, deps).catch((e: unknown) => e);
     expect((region as CliError).message).toContain('--region');
@@ -253,6 +254,7 @@ describe('ssh short flags that belong to ssh', () => {
   test('-p with a profile name after the target is caught before ssh complains about the port', async () => {
     const deps = makeDeps();
     await expect(runSsh(['web', '-p', 'default', 'hostname'], {}, deps)).rejects.toThrow('--profile default');
+    await expect(runSsh(['web', '-p', 'default', 'hostname'], {}, deps)).rejects.toThrow('-p default before "ssh"');
     expect(deps.resolveContext).not.toHaveBeenCalled();
     await runSsh(['web', '-p', '2222', 'hostname'], {}, deps); // a real port is passed through
     expect((deps.spawn as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[1]).toContain('2222');

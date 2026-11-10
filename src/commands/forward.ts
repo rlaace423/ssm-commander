@@ -1,4 +1,11 @@
-import { buildExecTarget, type ExecTarget, isEcsTarget, parseEcsTarget, STANDALONE_SERVICE } from '../aws/ecs.js';
+import {
+  buildExecTarget,
+  ECS_TARGET_PREFIX,
+  type ExecTarget,
+  isEcsTarget,
+  parseEcsTarget,
+  STANDALONE_SERVICE,
+} from '../aws/ecs.js';
 import { filterConnectable, listInstances } from '../aws/instances.js';
 import { resolveContext } from '../context.js';
 import { CliError, describeAwsError, IAM_ACTIONS } from '../errors.js';
@@ -18,6 +25,7 @@ import {
   savePresets,
   upsertPreset,
 } from '../storage/presets.js';
+import { isInstanceId } from '../target.js';
 import type { AwsContext, InstanceRow, StartSessionInput } from '../types.js';
 import { type DescriptionInputConfig, descriptionInput } from '../ui/description-input.js';
 import { pickInstance } from '../ui/instance-picker.js';
@@ -60,7 +68,8 @@ export interface ForwardOptions {
   profile?: string;
   region?: string;
   target?: string;
-  ecs?: boolean;
+  /** `--ecs` alone picks from lists; with a value it names the task, as `--target ecs:<value>` does. */
+  ecs?: boolean | string;
   container?: string;
   remoteHost?: string;
   remotePort?: string;
@@ -133,6 +142,10 @@ function parsePortOption(name: string, value: string | undefined): number | unde
 const PICK_HOP_NEED: TtyNeed = {
   what: 'Picking an instance',
   hint: 'Pass --target (an instance, or ecs:cluster/service) or a preset name',
+};
+const PICK_ECS_HOP_NEED: TtyNeed = {
+  what: 'Picking an ECS task',
+  hint: 'Pass --ecs cluster/service (or --target ecs:cluster/service) or a preset name',
 };
 const SETTINGS_NEED: TtyNeed = {
   what: 'Asking for the forward settings',
@@ -253,19 +266,33 @@ async function ecsHop(
   };
 }
 
+/** `--ecs cluster/service` names the task as `--target ecs:cluster/service` does; from here on only the latter is read. */
+function withEcsTarget(opts: ForwardOptions): ForwardOptions {
+  if (typeof opts.ecs !== 'string') return opts;
+  return { ...opts, ecs: true, target: isEcsTarget(opts.ecs) ? opts.ecs : `${ECS_TARGET_PREFIX}${opts.ecs}` };
+}
+
+/** forward's own argument is a preset: what the other commands take in that place is written with an option here. */
+function hopHint(word: string): string {
+  if (isInstanceId(word)) return `An instance is written as --target ${word}`;
+  if (word.includes('/') || isEcsTarget(word)) return `An ECS service is written as --ecs ${word}`;
+  return `An instance is written as --target ${word}, an ECS service as --ecs ${word}`;
+}
+
 /** Port forwarding through an instance or an ECS task, optionally driven by or saved as a named preset. */
 export async function runForward(
   presetName: string | undefined,
-  opts: ForwardOptions,
+  given: ForwardOptions,
   deps: ForwardDeps = defaultForwardDeps(),
 ): Promise<number> {
-  if (opts.list && opts.delete !== undefined) throw new CliError('--list and --delete cannot be combined');
-  if (opts.ecs && opts.target !== undefined) {
+  if (given.list && given.delete !== undefined) throw new CliError('--list and --delete cannot be combined');
+  if (given.ecs !== undefined && given.ecs !== false && given.target !== undefined) {
     throw new CliError(
       '--ecs and --target cannot be combined',
-      'Write the task as --target ecs:cluster/service[/task-id], or drop --target to pick from lists',
+      'Name the task once, as --ecs cluster/service[/task-id] or --target ecs:cluster/service[/task-id]; --ecs alone picks from lists',
     );
   }
+  const opts = withEcsTarget(given);
   const presets = await deps.loadPresets(deps.configDir);
 
   if (opts.list) {
@@ -283,7 +310,7 @@ export async function runForward(
   if (presetName !== undefined && preset === undefined) {
     throw new CliError(
       `Preset "${presetName}" was not found`,
-      'Run "ssm-commander forward --list" to see saved presets',
+      `Run "ssm-commander forward --list" to see saved presets. ${hopHint(presetName)}`,
     );
   }
   const remotePortOption = parsePortOption('--remote-port', opts.remotePort);
@@ -293,7 +320,7 @@ export async function runForward(
       ? presetKind(preset) === 'ecs'
       : opts.ecs === true || (opts.target !== undefined && isEcsTarget(opts.target));
   const pickedHop = preset === undefined && opts.target === undefined;
-  if (pickedHop) deps.requireTty(PICK_HOP_NEED); // before any AWS call
+  if (pickedHop) deps.requireTty(viaEcs ? PICK_ECS_HOP_NEED : PICK_HOP_NEED); // before any AWS call
   deps.assertPlugin();
 
   const ctx = await deps.resolveContext({
